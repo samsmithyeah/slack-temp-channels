@@ -18,7 +18,7 @@
       {
         "command": "/dash",
         "description": "Create a temporary channel",
-        "usage_hint": "",
+        "usage_hint": "[@user1 @user2 ...]",
         "should_escape": false
       }
     ]

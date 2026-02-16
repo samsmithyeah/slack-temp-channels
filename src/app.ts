@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { App } from "@slack/bolt";
 import { registerDashCommand } from "./commands/dash";
 import { registerCloseAction } from "./actions/close";
