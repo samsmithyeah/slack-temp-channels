@@ -24,7 +24,7 @@ describe("registerDashCommand", () => {
 
       await app.handlers["command:/dash"]({
         ack,
-        body: { trigger_id: "T123", text: "" },
+        body: { trigger_id: "T123", text: "", user_id: "UCMD" },
         client,
         logger: createMockLogger(),
       });
@@ -35,13 +35,13 @@ describe("registerDashCommand", () => {
       );
     });
 
-    it("parses user mentions from body.text and passes as preselected", async () => {
+    it("preselects the command invoker in the invite list", async () => {
       const ack = vi.fn();
       const client = createMockClient();
 
       await app.handlers["command:/dash"]({
         ack,
-        body: { trigger_id: "T123", text: "<@U111> <@U222>" },
+        body: { trigger_id: "T123", text: "", user_id: "UCMD" },
         client,
         logger: createMockLogger(),
       });
@@ -51,7 +51,45 @@ describe("registerDashCommand", () => {
         viewArg.view.blocks as Parameters<typeof findInputBlock>[0],
         "invite_users",
       );
-      expect(usersBlock.element.initial_users).toEqual(["U111", "U222"]);
+      expect(usersBlock.element.initial_users).toContain("UCMD");
+    });
+
+    it("includes mentioned users alongside the invoker", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+
+      await app.handlers["command:/dash"]({
+        ack,
+        body: { trigger_id: "T123", text: "<@U111> <@U222>", user_id: "UCMD" },
+        client,
+        logger: createMockLogger(),
+      });
+
+      const viewArg = client.views.open.mock.calls[0][0] as { view: { blocks: unknown[] } };
+      const usersBlock = findInputBlock(
+        viewArg.view.blocks as Parameters<typeof findInputBlock>[0],
+        "invite_users",
+      );
+      expect(usersBlock.element.initial_users).toEqual(["UCMD", "U111", "U222"]);
+    });
+
+    it("does not duplicate invoker when they mention themselves", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+
+      await app.handlers["command:/dash"]({
+        ack,
+        body: { trigger_id: "T123", text: "<@UCMD> <@U111>", user_id: "UCMD" },
+        client,
+        logger: createMockLogger(),
+      });
+
+      const viewArg = client.views.open.mock.calls[0][0] as { view: { blocks: unknown[] } };
+      const usersBlock = findInputBlock(
+        viewArg.view.blocks as Parameters<typeof findInputBlock>[0],
+        "invite_users",
+      );
+      expect(usersBlock.element.initial_users).toEqual(["UCMD", "U111"]);
     });
   });
 
