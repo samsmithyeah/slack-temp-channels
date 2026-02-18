@@ -1,4 +1,19 @@
 import type { KnownBlock } from "@slack/types";
+import { LABEL_BROADCAST_CLOSE, LABEL_CLOSE } from "./constants";
+
+export function getSlackErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const err = error as Record<string, unknown>;
+  if (typeof err.data !== "object" || err.data === null) return undefined;
+  const data = err.data as Record<string, unknown>;
+  return typeof data.error === "string" ? data.error : undefined;
+}
+
+export function parseUserIds(text: string): string[] {
+  // Slack sends @mentions as <@U12345> or <@U12345|username>
+  const matches = text.matchAll(/<@(U[A-Z0-9]+)(?:\|[^>]*)?>/g);
+  return [...matches].map((m) => m[1]);
+}
 
 export function slugify(name: string): string {
   return name
@@ -39,7 +54,7 @@ export function welcomeBlocks(
       elements: [
         {
           type: "button",
-          text: { type: "plain_text", text: "Close Channel" },
+          text: { type: "plain_text", text: LABEL_CLOSE },
           style: "danger",
           action_id: "close_channel",
           confirm: {
@@ -54,7 +69,7 @@ export function welcomeBlocks(
         },
         {
           type: "button",
-          text: { type: "plain_text", text: "Broadcast & Close" },
+          text: { type: "plain_text", text: LABEL_BROADCAST_CLOSE },
           action_id: "broadcast_and_close",
         },
       ],

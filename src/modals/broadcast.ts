@@ -1,12 +1,13 @@
 import type { View } from "@slack/types";
+import { LABEL_BROADCAST_CLOSE } from "../constants";
 
 export function broadcastModal(sourceChannelId: string): View {
   return {
     type: "modal",
     callback_id: "broadcast_submit",
     private_metadata: sourceChannelId,
-    title: { type: "plain_text", text: "Broadcast & Close" },
-    submit: { type: "plain_text", text: "Broadcast & Close" },
+    title: { type: "plain_text", text: LABEL_BROADCAST_CLOSE },
+    submit: { type: "plain_text", text: LABEL_BROADCAST_CLOSE },
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
       {

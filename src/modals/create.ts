@@ -1,11 +1,11 @@
 import type { View } from "@slack/types";
-import { CHANNEL_PREFIX } from "../constants";
+import { CHANNEL_PREFIX, LABEL_CREATE_SHORT } from "../constants";
 
 export function createChannelModal(preselectedUserIds?: string[]): View {
   return {
     type: "modal",
     callback_id: "create_channel",
-    title: { type: "plain_text", text: "Create a Dash" },
+    title: { type: "plain_text", text: LABEL_CREATE_SHORT },
     submit: { type: "plain_text", text: "Create" },
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
@@ -31,9 +31,7 @@ export function createChannelModal(preselectedUserIds?: string[]): View {
           type: "multi_users_select",
           action_id: "invite_users_input",
           placeholder: { type: "plain_text", text: "Select people to invite" },
-          ...(preselectedUserIds?.length
-            ? { initial_users: preselectedUserIds }
-            : {}),
+          ...(preselectedUserIds?.length ? { initial_users: preselectedUserIds } : {}),
         },
       },
       {

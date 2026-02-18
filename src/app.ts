@@ -1,10 +1,10 @@
 import "dotenv/config";
 import { App } from "@slack/bolt";
-import { registerDashCommand } from "./commands/dash";
-import { registerCloseAction } from "./actions/close";
 import { registerBroadcastAction } from "./actions/broadcast";
+import { registerCloseAction } from "./actions/close";
+import { registerDashCommand } from "./commands/dash";
+import { APP_HOME_DESCRIPTION, APP_HOME_HEADING, LABEL_CREATE } from "./constants";
 import { createChannelModal } from "./modals/create";
-import { APP_HOME_HEADING, APP_HOME_DESCRIPTION } from "./constants";
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -43,7 +43,7 @@ app.event("app_home_opened", async ({ event, client, logger }) => {
             elements: [
               {
                 type: "button",
-                text: { type: "plain_text", text: "Create a Dash" },
+                text: { type: "plain_text", text: LABEL_CREATE },
                 style: "primary",
                 action_id: "home_create_dash",
               },
@@ -63,7 +63,7 @@ app.action("home_create_dash", async ({ ack, body, client, logger }) => {
 
   try {
     await client.views.open({
-      trigger_id: (body as any).trigger_id,
+      trigger_id: (body as unknown as { trigger_id: string }).trigger_id,
       view: createChannelModal(),
     });
   } catch (error) {

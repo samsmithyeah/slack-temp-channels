@@ -3,6 +3,12 @@ export const CHANNEL_PREFIX = "-";
 export const CHANNEL_TOPIC =
   "Temporary channel created by the Dash app. Use the buttons in the pinned message to close.";
 
+// Labels
+export const LABEL_CREATE = "Create a temporary channel";
+export const LABEL_CREATE_SHORT = "New temp channel";
+export const LABEL_CLOSE = "Close Channel";
+export const LABEL_BROADCAST_CLOSE = "Broadcast & Close";
+
 // App Home
 export const APP_HOME_HEADING = "Dash — Temporary Channels";
 export const APP_HOME_DESCRIPTION =

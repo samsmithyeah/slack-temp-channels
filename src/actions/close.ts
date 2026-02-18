@@ -1,5 +1,6 @@
 import type { App } from "@slack/bolt";
 import { ERR_ARCHIVE_PERMISSION } from "../constants";
+import { getSlackErrorCode } from "../utils";
 
 export function registerCloseAction(app: App): void {
   app.action("close_channel", async ({ ack, body, client, logger }) => {
@@ -17,9 +18,10 @@ export function registerCloseAction(app: App): void {
       });
 
       await client.conversations.archive({ channel: channelId });
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error("Failed to archive channel:", error);
-      if (error?.data?.error === "not_authorized" || error?.data?.error === "restricted_action") {
+      const code = getSlackErrorCode(error);
+      if (code === "not_authorized" || code === "restricted_action") {
         await client.chat.postMessage({
           channel: channelId,
           text: ERR_ARCHIVE_PERMISSION,

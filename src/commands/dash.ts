@@ -1,13 +1,7 @@
 import type { App } from "@slack/bolt";
-import { createChannelModal } from "../modals/create";
-import { slugify, welcomeBlocks } from "../utils";
 import { CHANNEL_PREFIX, CHANNEL_TOPIC, ERR_CHANNEL_SETUP } from "../constants";
-
-function parseUserIds(text: string): string[] {
-  // Slack sends @mentions as <@U12345> or <@U12345|username>
-  const matches = text.matchAll(/<@(U[A-Z0-9]+)(?:\|[^>]*)?>/g);
-  return [...matches].map((m) => m[1]);
-}
+import { createChannelModal } from "../modals/create";
+import { getSlackErrorCode, parseUserIds, slugify, welcomeBlocks } from "../utils";
 
 export function registerDashCommand(app: App): void {
   app.command("/dash", async ({ ack, body, client, logger }) => {
@@ -44,8 +38,8 @@ export function registerDashCommand(app: App): void {
     try {
       const result = await client.conversations.create({ name: channelName });
       channelId = result.channel!.id!;
-    } catch (error: any) {
-      if (error?.data?.error === "name_taken") {
+    } catch (error: unknown) {
+      if (getSlackErrorCode(error) === "name_taken") {
         await ack({
           response_action: "errors",
           errors: {
