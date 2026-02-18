@@ -1,6 +1,7 @@
 import type { App } from "@slack/bolt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerHomeHandlers } from "../../src/actions/home";
+import { findInputBlock } from "../helpers/blocks";
 import { createMockApp, createMockClient, createMockLogger } from "../helpers/mock-app";
 
 describe("registerHomeHandlers", () => {
@@ -63,7 +64,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["action:home_create_dash"]({
         ack,
-        body: { trigger_id: "T_HOME" },
+        body: { trigger_id: "T_HOME", user: { id: "UHOME" } },
         client,
         logger: createMockLogger(),
       });
@@ -75,6 +76,25 @@ describe("registerHomeHandlers", () => {
           view: expect.objectContaining({ callback_id: "create_channel" }),
         }),
       );
+    });
+
+    it("preselects the user in the invite list", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+
+      await app.handlers["action:home_create_dash"]({
+        ack,
+        body: { trigger_id: "T_HOME", user: { id: "UHOME" } },
+        client,
+        logger: createMockLogger(),
+      });
+
+      const viewArg = client.views.open.mock.calls[0][0] as { view: { blocks: unknown[] } };
+      const usersBlock = findInputBlock(
+        viewArg.view.blocks as Parameters<typeof findInputBlock>[0],
+        "invite_users",
+      );
+      expect(usersBlock.element.initial_users).toEqual(["UHOME"]);
     });
   });
 });

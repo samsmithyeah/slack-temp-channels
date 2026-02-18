@@ -1,11 +1,11 @@
 import type { View } from "@slack/types";
-import { CHANNEL_PREFIX, LABEL_CREATE_SHORT } from "../constants";
+import { CHANNEL_PREFIX, LABEL_CREATE } from "../constants";
 
 export function createChannelModal(preselectedUserIds?: string[]): View {
   return {
     type: "modal",
     callback_id: "create_channel",
-    title: { type: "plain_text", text: LABEL_CREATE_SHORT },
+    title: { type: "plain_text", text: LABEL_CREATE },
     submit: { type: "plain_text", text: "Create" },
     close: { type: "plain_text", text: "Cancel" },
     blocks: [

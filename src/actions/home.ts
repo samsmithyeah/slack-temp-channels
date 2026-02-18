@@ -47,7 +47,7 @@ export function registerHomeHandlers(app: App): void {
     try {
       await client.views.open({
         trigger_id: (body as unknown as { trigger_id: string }).trigger_id,
-        view: createChannelModal(),
+        view: createChannelModal([body.user.id]),
       });
     } catch (error) {
       logger.error("Failed to open modal from home:", error);
