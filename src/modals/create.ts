@@ -1,4 +1,5 @@
 import type { View } from "@slack/types";
+import { CHANNEL_PREFIX } from "../constants";
 
 export function createChannelModal(preselectedUserIds?: string[]): View {
   return {
@@ -14,7 +15,7 @@ export function createChannelModal(preselectedUserIds?: string[]): View {
         label: { type: "plain_text", text: "Channel name" },
         hint: {
           type: "plain_text",
-          text: 'Will be prefixed with "-". Lowercase, hyphens only.',
+          text: `Will be prefixed with "${CHANNEL_PREFIX}". Lowercase, hyphens only.`,
         },
         element: {
           type: "plain_text_input",

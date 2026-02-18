@@ -1,6 +1,7 @@
 import type { App } from "@slack/bolt";
 import { createChannelModal } from "../modals/create";
 import { slugify, welcomeBlocks } from "../utils";
+import { CHANNEL_PREFIX, CHANNEL_TOPIC, ERR_CHANNEL_SETUP } from "../constants";
 
 function parseUserIds(text: string): string[] {
   // Slack sends @mentions as <@U12345> or <@U12345|username>
@@ -27,11 +28,16 @@ export function registerDashCommand(app: App): void {
   app.view("create_channel", async ({ ack, body, view, client, logger }) => {
     const values = view.state.values;
     const rawName = values.channel_name.channel_name_input.value!;
-    const userIds = values.invite_users.invite_users_input.selected_users!;
+    const selectedUsers = values.invite_users.invite_users_input.selected_users!;
     const purpose = values.purpose.purpose_input.value ?? undefined;
     const creatorId = body.user.id;
 
-    const channelName = `-${slugify(rawName)}`;
+    // Ensure creator is in the invite list
+    const userIds = selectedUsers.includes(creatorId)
+      ? selectedUsers
+      : [creatorId, ...selectedUsers];
+
+    const channelName = `${CHANNEL_PREFIX}${slugify(rawName)}`;
 
     // Create channel
     let channelId: string;
@@ -61,19 +67,15 @@ export function registerDashCommand(app: App): void {
     await ack();
 
     try {
-      // Set purpose/topic
-      if (purpose) {
-        await Promise.all([
-          client.conversations.setPurpose({
-            channel: channelId,
-            purpose,
-          }),
-          client.conversations.setTopic({
-            channel: channelId,
-            topic: purpose,
-          }),
-        ]);
-      }
+      // Set purpose and topic
+      const setPurpose = purpose
+        ? client.conversations.setPurpose({ channel: channelId, purpose })
+        : Promise.resolve();
+      const setTopic = client.conversations.setTopic({
+        channel: channelId,
+        topic: CHANNEL_TOPIC,
+      });
+      await Promise.all([setPurpose, setTopic]);
 
       // Invite users (bot is auto-joined as creator)
       if (userIds.length > 0) {
@@ -93,7 +95,7 @@ export function registerDashCommand(app: App): void {
       logger.error("Error setting up channel:", error);
       await client.chat.postMessage({
         channel: channelId,
-        text: "There was an issue setting up this channel fully. Some users may need to be invited manually.",
+        text: ERR_CHANNEL_SETUP,
       });
     }
   });

@@ -1,5 +1,6 @@
 import type { App } from "@slack/bolt";
 import { broadcastModal } from "../modals/broadcast";
+import { ERR_ARCHIVE_PERMISSION } from "../constants";
 
 export function registerBroadcastAction(app: App): void {
   // Open the broadcast modal when button is clicked
@@ -40,10 +41,38 @@ export function registerBroadcastAction(app: App): void {
       });
       const channelName = channelInfo.channel?.name ?? "unknown";
 
+      // Join destination channel so the bot can post
+      await client.conversations.join({ channel: destinationChannelId });
+
       // Post to destination channel
       await client.chat.postMessage({
         channel: destinationChannelId,
-        text: `Dash channel #${channelName} has wrapped up.\n\nOutcome: ${outcome}`,
+        text: `Dash channel <#${sourceChannelId}> has wrapped up. Outcome: ${outcome}`,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `<#${sourceChannelId}> has wrapped up.`,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*Outcome:*\n>${outcome.replace(/\n/g, "\n>")}`,
+            },
+          },
+          {
+            type: "context",
+            elements: [
+              {
+                type: "mrkdwn",
+                text: `Closed by <@${userId}>`,
+              },
+            ],
+          },
+        ],
       });
 
       // Get destination channel name for the close message
@@ -68,7 +97,7 @@ export function registerBroadcastAction(app: App): void {
       ) {
         await client.chat.postMessage({
           channel: sourceChannelId,
-          text: "I don't have permission to archive this channel. A workspace admin will need to archive it manually.",
+          text: ERR_ARCHIVE_PERMISSION,
         });
       }
     }

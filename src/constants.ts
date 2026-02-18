@@ -1,0 +1,15 @@
+// Channel settings
+export const CHANNEL_PREFIX = "-";
+export const CHANNEL_TOPIC =
+  "Temporary channel created by the Dash app. Use the buttons in the pinned message to close.";
+
+// App Home
+export const APP_HOME_HEADING = "Dash — Temporary Channels";
+export const APP_HOME_DESCRIPTION =
+  "Quickly spin up a temporary channel with the right people. When you're done, close it — optionally broadcasting the outcome first.\n\nType `/dash` in any channel, or use the button below.";
+
+// Error messages
+export const ERR_ARCHIVE_PERMISSION =
+  "I don't have permission to archive this channel. A workspace admin will need to archive it manually.";
+export const ERR_CHANNEL_SETUP =
+  "There was an issue setting up this channel fully. Some users may need to be invited manually.";

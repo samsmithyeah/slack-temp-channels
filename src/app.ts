@@ -4,6 +4,7 @@ import { registerDashCommand } from "./commands/dash";
 import { registerCloseAction } from "./actions/close";
 import { registerBroadcastAction } from "./actions/broadcast";
 import { createChannelModal } from "./modals/create";
+import { APP_HOME_HEADING, APP_HOME_DESCRIPTION } from "./constants";
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -27,13 +28,13 @@ app.event("app_home_opened", async ({ event, client, logger }) => {
         blocks: [
           {
             type: "header",
-            text: { type: "plain_text", text: "Dash — Temporary Channels" },
+            text: { type: "plain_text", text: APP_HOME_HEADING },
           },
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: "Quickly spin up a temporary channel with the right people. When you're done, close it — optionally broadcasting the outcome first.\n\nType `/dash` in any channel, or use the button below.",
+              text: APP_HOME_DESCRIPTION,
             },
           },
           { type: "divider" },
