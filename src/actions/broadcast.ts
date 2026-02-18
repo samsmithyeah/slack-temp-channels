@@ -1,27 +1,25 @@
 import type { App } from "@slack/bolt";
-import { broadcastModal } from "../modals/broadcast";
 import { ERR_ARCHIVE_PERMISSION } from "../constants";
+import { broadcastModal } from "../modals/broadcast";
+import { getSlackErrorCode } from "../utils";
 
 export function registerBroadcastAction(app: App): void {
   // Open the broadcast modal when button is clicked
-  app.action(
-    "broadcast_and_close",
-    async ({ ack, body, client, logger }) => {
-      await ack();
+  app.action("broadcast_and_close", async ({ ack, body, client, logger }) => {
+    await ack();
 
-      const channelId = body.channel?.id;
-      if (!channelId) return;
+    const channelId = body.channel?.id;
+    if (!channelId) return;
 
-      try {
-        await client.views.open({
-          trigger_id: (body as any).trigger_id,
-          view: broadcastModal(channelId),
-        });
-      } catch (error) {
-        logger.error("Failed to open broadcast modal:", error);
-      }
-    },
-  );
+    try {
+      await client.views.open({
+        trigger_id: (body as unknown as { trigger_id: string }).trigger_id,
+        view: broadcastModal(channelId),
+      });
+    } catch (error) {
+      logger.error("Failed to open broadcast modal:", error);
+    }
+  });
 
   // Handle broadcast modal submission
   app.view("broadcast_submit", async ({ ack, body, view, client, logger }) => {
@@ -35,12 +33,6 @@ export function registerBroadcastAction(app: App): void {
     const userId = body.user.id;
 
     try {
-      // Get source channel info for the name
-      const channelInfo = await client.conversations.info({
-        channel: sourceChannelId,
-      });
-      const channelName = channelInfo.channel?.name ?? "unknown";
-
       // Join destination channel so the bot can post
       await client.conversations.join({ channel: destinationChannelId });
 
@@ -86,15 +78,18 @@ export function registerBroadcastAction(app: App): void {
         channel: sourceChannelId,
         text: `This channel was closed by <@${userId}>. Outcome was shared to #${destName}.`,
       });
-
-      // Archive the source channel
-      await client.conversations.archive({ channel: sourceChannelId });
-    } catch (error: any) {
+    } catch (error) {
       logger.error("Failed to broadcast and close:", error);
-      if (
-        error?.data?.error === "not_authorized" ||
-        error?.data?.error === "restricted_action"
-      ) {
+      return;
+    }
+
+    // Archive separately so permission errors don't mask broadcast failures
+    try {
+      await client.conversations.archive({ channel: sourceChannelId });
+    } catch (error: unknown) {
+      logger.error("Failed to archive channel:", error);
+      const code = getSlackErrorCode(error);
+      if (code === "not_authorized" || code === "restricted_action") {
         await client.chat.postMessage({
           channel: sourceChannelId,
           text: ERR_ARCHIVE_PERMISSION,

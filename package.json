@@ -6,18 +6,31 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/app.js",
-    "dev": "tsx src/app.ts"
+    "dev": "tsx src/app.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "biome check src/ tests/",
+    "check:fix": "biome check --write src/ tests/",
+    "typecheck": "tsc --project tsconfig.check.json",
+    "knip": "knip"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=24"
+  },
   "dependencies": {
     "@slack/bolt": "^4.6.0",
     "dotenv": "^17.3.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.2",
+    "@slack/types": "^2.20.0",
     "@types/node": "^25.2.3",
+    "knip": "^5.84.1",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

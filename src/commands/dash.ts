@@ -1,13 +1,7 @@
 import type { App } from "@slack/bolt";
-import { createChannelModal } from "../modals/create";
-import { slugify, welcomeBlocks } from "../utils";
 import { CHANNEL_PREFIX, CHANNEL_TOPIC, ERR_CHANNEL_SETUP } from "../constants";
-
-function parseUserIds(text: string): string[] {
-  // Slack sends @mentions as <@U12345> or <@U12345|username>
-  const matches = text.matchAll(/<@(U[A-Z0-9]+)(?:\|[^>]*)?>/g);
-  return [...matches].map((m) => m[1]);
-}
+import { createChannelModal } from "../modals/create";
+import { getSlackErrorCode, parseUserIds, slugify, welcomeBlocks } from "../utils";
 
 export function registerDashCommand(app: App): void {
   app.command("/dash", async ({ ack, body, client, logger }) => {
@@ -37,15 +31,26 @@ export function registerDashCommand(app: App): void {
       ? selectedUsers
       : [creatorId, ...selectedUsers];
 
-    const channelName = `${CHANNEL_PREFIX}${slugify(rawName)}`;
+    const slug = slugify(rawName);
+    if (!slug) {
+      await ack({
+        response_action: "errors",
+        errors: {
+          channel_name: "Channel name must contain at least one letter or number.",
+        },
+      });
+      return;
+    }
+
+    const channelName = `${CHANNEL_PREFIX}${slug}`;
 
     // Create channel
     let channelId: string;
     try {
       const result = await client.conversations.create({ name: channelName });
       channelId = result.channel!.id!;
-    } catch (error: any) {
-      if (error?.data?.error === "name_taken") {
+    } catch (error: unknown) {
+      if (getSlackErrorCode(error) === "name_taken") {
         await ack({
           response_action: "errors",
           errors: {
@@ -85,12 +90,15 @@ export function registerDashCommand(app: App): void {
         });
       }
 
-      // Post welcome message
-      await client.chat.postMessage({
+      // Post and pin welcome message
+      const welcome = await client.chat.postMessage({
         channel: channelId,
         text: `Temporary channel created by <@${creatorId}>`,
         blocks: welcomeBlocks(creatorId, purpose, userIds),
       });
+      if (welcome.ts) {
+        await client.pins.add({ channel: channelId, timestamp: welcome.ts });
+      }
     } catch (error) {
       logger.error("Error setting up channel:", error);
       await client.chat.postMessage({
