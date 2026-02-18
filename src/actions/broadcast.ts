@@ -78,11 +78,16 @@ export function registerBroadcastAction(app: App): void {
         channel: sourceChannelId,
         text: `This channel was closed by <@${userId}>. Outcome was shared to #${destName}.`,
       });
+    } catch (error) {
+      logger.error("Failed to broadcast and close:", error);
+      return;
+    }
 
-      // Archive the source channel
+    // Archive separately so permission errors don't mask broadcast failures
+    try {
       await client.conversations.archive({ channel: sourceChannelId });
     } catch (error: unknown) {
-      logger.error("Failed to broadcast and close:", error);
+      logger.error("Failed to archive channel:", error);
       const code = getSlackErrorCode(error);
       if (code === "not_authorized" || code === "restricted_action") {
         await client.chat.postMessage({

@@ -31,7 +31,18 @@ export function registerDashCommand(app: App): void {
       ? selectedUsers
       : [creatorId, ...selectedUsers];
 
-    const channelName = `${CHANNEL_PREFIX}${slugify(rawName)}`;
+    const slug = slugify(rawName);
+    if (!slug) {
+      await ack({
+        response_action: "errors",
+        errors: {
+          channel_name: "Channel name must contain at least one letter or number.",
+        },
+      });
+      return;
+    }
+
+    const channelName = `${CHANNEL_PREFIX}${slug}`;
 
     // Create channel
     let channelId: string;
@@ -79,12 +90,15 @@ export function registerDashCommand(app: App): void {
         });
       }
 
-      // Post welcome message
-      await client.chat.postMessage({
+      // Post and pin welcome message
+      const welcome = await client.chat.postMessage({
         channel: channelId,
         text: `Temporary channel created by <@${creatorId}>`,
         blocks: welcomeBlocks(creatorId, purpose, userIds),
       });
+      if (welcome.ts) {
+        await client.pins.add({ channel: channelId, timestamp: welcome.ts });
+      }
     } catch (error) {
       logger.error("Error setting up channel:", error);
       await client.chat.postMessage({

@@ -161,6 +161,41 @@ describe("registerDashCommand", () => {
       );
     });
 
+    it("pins the welcome message", async () => {
+      const payload = makeViewPayload();
+      await app.handlers["view:create_channel"](payload);
+
+      expect(payload.client.pins.add).toHaveBeenCalledWith({
+        channel: "C_NEW",
+        timestamp: "1234567890.123456",
+      });
+    });
+
+    it("rejects empty channel name with validation error", async () => {
+      const payload = makeViewPayload({
+        view: {
+          state: {
+            values: {
+              channel_name: { channel_name_input: { value: "!!!" } },
+              invite_users: { invite_users_input: { selected_users: ["U1"] } },
+              purpose: { purpose_input: { value: null } },
+            },
+          },
+        },
+      });
+      await app.handlers["view:create_channel"](payload);
+
+      expect(payload.ack).toHaveBeenCalledWith(
+        expect.objectContaining({
+          response_action: "errors",
+          errors: expect.objectContaining({
+            channel_name: expect.stringContaining("at least one letter or number"),
+          }),
+        }),
+      );
+      expect(payload.client.conversations.create).not.toHaveBeenCalled();
+    });
+
     it("returns name_taken error on duplicate channel name", async () => {
       const payload = makeViewPayload();
       payload.client.conversations.create.mockRejectedValueOnce({

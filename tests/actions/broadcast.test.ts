@@ -156,6 +156,11 @@ describe("registerBroadcastAction", () => {
 
       await app.handlers["view:broadcast_submit"](payload);
 
+      // Broadcast should still have been posted
+      expect(payload.client.chat.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ channel: "C_DEST" }),
+      );
+      // Permission error message should be posted
       expect(payload.client.chat.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           channel: "C_SRC",
@@ -177,6 +182,15 @@ describe("registerBroadcastAction", () => {
           text: ERR_ARCHIVE_PERMISSION,
         }),
       );
+    });
+
+    it("does not archive when broadcast fails", async () => {
+      const payload = makeViewPayload();
+      payload.client.conversations.join.mockRejectedValueOnce(new Error("channel_not_found"));
+
+      await app.handlers["view:broadcast_submit"](payload);
+
+      expect(payload.client.conversations.archive).not.toHaveBeenCalled();
     });
   });
 });

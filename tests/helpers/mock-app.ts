@@ -16,7 +16,10 @@ export function createMockClient() {
       info: vi.fn().mockResolvedValue({ channel: { name: "general" } }),
     },
     chat: {
-      postMessage: vi.fn().mockResolvedValue({}),
+      postMessage: vi.fn().mockResolvedValue({ ts: "1234567890.123456" }),
+    },
+    pins: {
+      add: vi.fn().mockResolvedValue({}),
     },
   };
 }

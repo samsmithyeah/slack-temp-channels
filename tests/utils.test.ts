@@ -1,6 +1,36 @@
 import type { ActionsBlock, SectionBlock } from "@slack/types";
 import { describe, expect, it } from "vitest";
-import { parseUserIds, slugify, welcomeBlocks } from "../src/utils";
+import { getSlackErrorCode, parseUserIds, slugify, welcomeBlocks } from "../src/utils";
+
+describe("getSlackErrorCode", () => {
+  it("extracts error code from Slack API error shape", () => {
+    expect(getSlackErrorCode({ data: { error: "name_taken" } })).toBe("name_taken");
+  });
+
+  it("returns undefined for null", () => {
+    expect(getSlackErrorCode(null)).toBeUndefined();
+  });
+
+  it("returns undefined for undefined", () => {
+    expect(getSlackErrorCode(undefined)).toBeUndefined();
+  });
+
+  it("returns undefined for a plain Error", () => {
+    expect(getSlackErrorCode(new Error("oops"))).toBeUndefined();
+  });
+
+  it("returns undefined when data is not an object", () => {
+    expect(getSlackErrorCode({ data: "string" })).toBeUndefined();
+  });
+
+  it("returns undefined when data.error is not a string", () => {
+    expect(getSlackErrorCode({ data: { error: 42 } })).toBeUndefined();
+  });
+
+  it("returns undefined for empty object", () => {
+    expect(getSlackErrorCode({})).toBeUndefined();
+  });
+});
 
 describe("slugify", () => {
   it("lowercases and replaces spaces with hyphens", () => {
@@ -15,8 +45,8 @@ describe("slugify", () => {
     expect(slugify("a---b")).toBe("a-b");
   });
 
-  it("strips underscores", () => {
-    expect(slugify("foo_bar")).toBe("foobar");
+  it("replaces underscores with hyphens", () => {
+    expect(slugify("foo_bar")).toBe("foo-bar");
   });
 
   it("trims leading and trailing hyphens", () => {
