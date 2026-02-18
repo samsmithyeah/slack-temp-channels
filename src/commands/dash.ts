@@ -7,10 +7,7 @@ export function registerDashCommand(app: App): void {
   app.command("/dash", async ({ ack, body, client, logger }) => {
     await ack();
 
-    const mentionedUserIds = parseUserIds(body.text ?? "");
-    const preselectedUserIds = mentionedUserIds.includes(body.user_id)
-      ? mentionedUserIds
-      : [body.user_id, ...mentionedUserIds];
+    const preselectedUserIds = [...new Set([body.user_id, ...parseUserIds(body.text ?? "")])];
 
     try {
       await client.views.open({
