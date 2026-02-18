@@ -66,6 +66,21 @@ describe("registerCloseAction", () => {
     expect(client.conversations.archive).not.toHaveBeenCalled();
   });
 
+  it("still archives when close message fails to post", async () => {
+    const ack = vi.fn();
+    const client = createMockClient();
+    client.chat.postMessage.mockRejectedValueOnce(new Error("not_in_channel"));
+
+    await app.handlers["action:close_channel"]({
+      ack,
+      body: { channel: { id: "C123" }, user: { id: "U1" } },
+      client,
+      logger: createMockLogger(),
+    });
+
+    expect(client.conversations.archive).toHaveBeenCalledWith({ channel: "C123" });
+  });
+
   it("posts permission error on not_authorized", async () => {
     const ack = vi.fn();
     const client = createMockClient();

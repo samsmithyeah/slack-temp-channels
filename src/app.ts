@@ -21,4 +21,4 @@ registerHomeHandlers(app);
 (async () => {
   await app.start();
   console.log("⚡ Dash app is running!");
-})();
+})().catch(console.error);

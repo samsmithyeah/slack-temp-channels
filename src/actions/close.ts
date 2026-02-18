@@ -16,7 +16,11 @@ export function registerCloseAction(app: App): void {
         channel: channelId,
         text: `This channel was closed by <@${userId}>`,
       });
+    } catch (error) {
+      logger.error("Failed to post close message:", error);
+    }
 
+    try {
       await client.conversations.archive({ channel: channelId });
     } catch (error: unknown) {
       logger.error("Failed to archive channel:", error);

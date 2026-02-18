@@ -17,6 +17,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=24"
+  },
   "dependencies": {
     "@slack/bolt": "^4.6.0",
     "dotenv": "^17.3.1"
