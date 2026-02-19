@@ -1,5 +1,5 @@
 import type { KnownBlock } from "@slack/types";
-import { LABEL_BROADCAST_CLOSE, LABEL_CLOSE } from "./constants";
+import { CREATOR_MSG_TEXT, LABEL_BROADCAST_CLOSE, LABEL_CLOSE } from "./constants";
 
 export function getSlackErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null) return undefined;
@@ -38,7 +38,7 @@ export function welcomeBlocks(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*<@${creatorId}> created this temporary channel.*${purposeLine}`,
+        text: `*<@${creatorId}> ${CREATOR_MSG_TEXT}.*${purposeLine}`,
       },
     },
     {

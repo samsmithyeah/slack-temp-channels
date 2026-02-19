@@ -13,6 +13,9 @@ export const APP_HOME_HEADING = "Dash: Temporary channels";
 export const APP_HOME_DESCRIPTION =
   "Quickly spin up a temporary channel with the right people. \n\nTo create one, type `/dash` in any channel, or use the button below.";
 
+// Welcome message
+export const CREATOR_MSG_TEXT = "created this temporary channel";
+
 // Error messages
 export const ERR_ARCHIVE_PERMISSION =
   "I don't have permission to archive this channel. A workspace admin will need to archive it manually.";

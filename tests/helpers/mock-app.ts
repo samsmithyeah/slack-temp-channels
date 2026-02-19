@@ -2,6 +2,9 @@ import { vi } from "vitest";
 
 export function createMockClient() {
   return {
+    auth: {
+      test: vi.fn().mockResolvedValue({ user_id: "U_BOT" }),
+    },
     views: {
       open: vi.fn().mockResolvedValue({}),
       publish: vi.fn().mockResolvedValue({}),
@@ -14,12 +17,18 @@ export function createMockClient() {
       archive: vi.fn().mockResolvedValue({}),
       join: vi.fn().mockResolvedValue({}),
       info: vi.fn().mockResolvedValue({ channel: { name: "general" } }),
+      members: vi.fn().mockResolvedValue({ members: [] }),
+    },
+    users: {
+      conversations: vi.fn().mockResolvedValue({ channels: [], response_metadata: {} }),
     },
     chat: {
       postMessage: vi.fn().mockResolvedValue({ ts: "1234567890.123456" }),
+      postEphemeral: vi.fn().mockResolvedValue({}),
     },
     pins: {
       add: vi.fn().mockResolvedValue({}),
+      list: vi.fn().mockResolvedValue({ items: [] }),
     },
   };
 }
