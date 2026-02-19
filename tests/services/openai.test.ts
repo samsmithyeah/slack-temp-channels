@@ -152,6 +152,12 @@ describe("restoreUserMentions", () => {
     const result = restoreUserMentions("sam.smith decided.", names);
     expect(result).toBe("<@U2> decided.");
   });
+
+  it("does not replace partial word matches", () => {
+    const names = new Map([["U1", "Al"]]);
+    const result = restoreUserMentions("Also discussed the plan with Al.", names);
+    expect(result).toBe("Also discussed the plan with <@U1>.");
+  });
 });
 
 describe("createOpenAIClient", () => {

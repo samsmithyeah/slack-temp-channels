@@ -58,7 +58,8 @@ export function restoreUserMentions(text: string, userNames: Map<string, string>
 
   let result = text;
   for (const { name, mention } of replacements) {
-    result = result.split(name).join(mention);
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    result = result.replace(new RegExp(`\\b${escaped}\\b`, "g"), mention);
   }
   return result;
 }
