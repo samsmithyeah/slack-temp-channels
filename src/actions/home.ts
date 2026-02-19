@@ -18,7 +18,7 @@ const dashChannelCache = new Map<
   { data: { created: DashChannel[]; memberOf: DashChannel[] }; timestamp: number }
 >();
 
-let cachedBotUserId: string | undefined;
+const botUserIdCache = new Map<string, Promise<string>>();
 
 const CREATOR_REGEX = new RegExp(`<@(\\w+)> ${CREATOR_MSG_TEXT}`);
 
@@ -35,11 +35,12 @@ interface Logger {
   error(...args: unknown[]): void;
 }
 
-async function getBotUserId(client: WebClient): Promise<string> {
-  if (cachedBotUserId) return cachedBotUserId;
-  const result = await client.auth.test();
-  cachedBotUserId = result.user_id as string;
-  return cachedBotUserId;
+function getBotUserId(client: WebClient, teamId: string): Promise<string> {
+  const existing = botUserIdCache.get(teamId);
+  if (existing) return existing;
+  const promise = client.auth.test().then((r) => r.user_id as string);
+  botUserIdCache.set(teamId, promise);
+  return promise;
 }
 
 function extractCreatorFromPins(
@@ -58,8 +59,9 @@ function extractCreatorFromPins(
 async function fetchDashChannels(
   client: WebClient,
   userId: string,
+  teamId: string,
 ): Promise<{ created: DashChannel[]; memberOf: DashChannel[] }> {
-  const botUserId = await getBotUserId(client);
+  const botUserId = await getBotUserId(client, teamId);
 
   // Get dash channels the user is a member of directly
   const userDashChannels: DashChannel[] = [];
@@ -174,19 +176,25 @@ function channelSectionBlocks(
   return blocks;
 }
 
-async function publishHomeView(client: WebClient, userId: string, logger: Logger): Promise<void> {
+async function publishHomeView(
+  client: WebClient,
+  userId: string,
+  teamId: string,
+  logger: Logger,
+): Promise<void> {
   let created: DashChannel[] = [];
   let memberOf: DashChannel[] = [];
 
   try {
-    const cached = dashChannelCache.get(userId);
+    const cacheKey = `${teamId}:${userId}`;
+    const cached = dashChannelCache.get(cacheKey);
     const now = Date.now();
     let data: { created: DashChannel[]; memberOf: DashChannel[] };
     if (cached && now - cached.timestamp < CACHE_TTL_MS) {
       data = cached.data;
     } else {
-      data = await fetchDashChannels(client, userId);
-      dashChannelCache.set(userId, { data, timestamp: now });
+      data = await fetchDashChannels(client, userId, teamId);
+      dashChannelCache.set(cacheKey, { data, timestamp: now });
     }
     created = data.created;
     memberOf = data.memberOf;
@@ -240,13 +248,13 @@ async function publishHomeView(client: WebClient, userId: string, logger: Logger
 /** @internal Exposed for tests only */
 export function _clearCacheForTesting(): void {
   dashChannelCache.clear();
-  cachedBotUserId = undefined;
+  botUserIdCache.clear();
 }
 
 export function registerHomeHandlers(app: App): void {
-  app.event("app_home_opened", async ({ event, client, logger }) => {
+  app.event("app_home_opened", async ({ event, client, logger, context }) => {
     try {
-      await publishHomeView(client, event.user, logger);
+      await publishHomeView(client, event.user, context.teamId ?? "", logger);
     } catch (error) {
       logger.error("Failed to publish app home:", error);
     }
@@ -277,11 +285,12 @@ export function registerHomeHandlers(app: App): void {
     if (action.type !== "button" || !action.value) return;
     const channelId = action.value;
     const userId = body.user.id;
+    const teamId = body.team?.id ?? "";
 
     // Verify the user is the channel creator before allowing close
     try {
       const [botUserId, pinsResult] = await Promise.all([
-        getBotUserId(client),
+        getBotUserId(client, teamId),
         client.pins.list({ channel: channelId }),
       ]);
       const creatorId = extractCreatorFromPins(pinsResult.items as PinItem[], botUserId);
@@ -331,9 +340,9 @@ export function registerHomeHandlers(app: App): void {
     }
 
     // Refresh the home view to remove the closed channel
-    dashChannelCache.delete(userId);
+    dashChannelCache.delete(`${teamId}:${userId}`);
     try {
-      await publishHomeView(client, userId, logger);
+      await publishHomeView(client, userId, teamId, logger);
     } catch (error) {
       logger.error("Failed to refresh home view after close:", error);
     }

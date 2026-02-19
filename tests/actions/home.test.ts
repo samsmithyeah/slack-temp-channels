@@ -23,6 +23,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["event:app_home_opened"]({
         event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
         client,
         logger: createMockLogger(),
       });
@@ -40,6 +41,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["event:app_home_opened"]({
         event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
         client,
         logger: createMockLogger(),
       });
@@ -77,6 +79,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["event:app_home_opened"]({
         event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
         client,
         logger: createMockLogger(),
       });
@@ -117,6 +120,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["event:app_home_opened"]({
         event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
         client,
         logger: createMockLogger(),
       });
@@ -164,6 +168,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["event:app_home_opened"]({
         event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
         client,
         logger: createMockLogger(),
       });
@@ -192,6 +197,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["event:app_home_opened"]({
         event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
         client,
         logger: createMockLogger(),
       });
@@ -216,6 +222,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["event:app_home_opened"]({
         event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
         client,
         logger: createMockLogger(),
       });
@@ -261,6 +268,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["event:app_home_opened"]({
         event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
         client,
         logger: createMockLogger(),
       });
@@ -304,6 +312,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["event:app_home_opened"]({
         event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
         client,
         logger,
       });
@@ -353,6 +362,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["event:app_home_opened"]({
         event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
         client,
         logger: createMockLogger(),
       });
@@ -450,7 +460,11 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["action:/^home_close_/"]({
         ack,
-        body: { user: { id: "U_CLOSER" }, actions: [{ type: "button", value: "C_TARGET" }] },
+        body: {
+          team: { id: "T_TEAM" },
+          user: { id: "U_CLOSER" },
+          actions: [{ type: "button", value: "C_TARGET" }],
+        },
         client,
         logger: createMockLogger(),
       });
@@ -486,7 +500,11 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["action:/^home_close_/"]({
         ack,
-        body: { user: { id: "U_CLOSER" }, actions: [{ type: "button", value: "C_TARGET" }] },
+        body: {
+          team: { id: "T_TEAM" },
+          user: { id: "U_CLOSER" },
+          actions: [{ type: "button", value: "C_TARGET" }],
+        },
         client,
         logger: createMockLogger(),
       });
@@ -517,7 +535,11 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["action:/^home_close_/"]({
         ack,
-        body: { user: { id: "U_ATTACKER" }, actions: [{ type: "button", value: "C_TARGET" }] },
+        body: {
+          team: { id: "T_TEAM" },
+          user: { id: "U_ATTACKER" },
+          actions: [{ type: "button", value: "C_TARGET" }],
+        },
         client,
         logger,
       });
