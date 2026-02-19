@@ -11,7 +11,9 @@ describe("broadcastModal", () => {
 
   it("stores sourceChannelId in private_metadata", () => {
     const view = broadcastModal("C_SOURCE");
-    expect(view.private_metadata).toBe("C_SOURCE");
+    expect(JSON.parse(view.private_metadata!)).toEqual(
+      expect.objectContaining({ channelId: "C_SOURCE" }),
+    );
   });
 
   it("has destination_channel and outcome blocks", () => {
@@ -74,9 +76,24 @@ describe("broadcastModal", () => {
     expect(outcomeBlock.element.initial_value).toBeUndefined();
   });
 
-  it("hides AI button when hideAiButton is true", () => {
-    const view = broadcastModal("C_SOURCE", undefined, "Loading...", true);
-    const blockIds = getBlockIds(view.blocks);
-    expect(blockIds).not.toContain("ai_actions");
+  describe("loading state", () => {
+    it("shows loading section instead of outcome input and AI button", () => {
+      const view = broadcastModal("C_SOURCE", undefined, undefined, true);
+      const blockIds = getBlockIds(view.blocks);
+      expect(blockIds).toContain("loading");
+      expect(blockIds).not.toContain("outcome");
+      expect(blockIds).not.toContain("ai_actions");
+    });
+
+    it("keeps the submit button when loading", () => {
+      const view = broadcastModal("C_SOURCE", undefined, undefined, true);
+      expect((view as { submit?: unknown }).submit).toBeDefined();
+    });
+
+    it("preserves destination channel during loading", () => {
+      const view = broadcastModal("C_SOURCE", "C_DEST", undefined, true);
+      const destBlock = findInputBlock(view.blocks, "destination_channel");
+      expect(destBlock.element.initial_conversation).toBe("C_DEST");
+    });
   });
 });

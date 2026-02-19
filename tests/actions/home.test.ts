@@ -505,7 +505,7 @@ describe("registerHomeHandlers", () => {
           trigger_id: "T_BROADCAST",
           view: expect.objectContaining({
             callback_id: "broadcast_submit",
-            private_metadata: "C_TARGET",
+            private_metadata: JSON.stringify({ channelId: "C_TARGET" }),
           }),
         }),
       );

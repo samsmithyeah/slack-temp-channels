@@ -1,7 +1,7 @@
 import type { WebClient } from "@slack/web-api";
 
 const MAX_PAGES = 1;
-const MESSAGES_PER_PAGE = 200;
+const MESSAGES_PER_PAGE = 100;
 
 interface RawMessage {
   user?: string;
@@ -34,4 +34,27 @@ export async function fetchChannelMessages(
 
   // conversations.history returns newest-first; reverse to chronological order
   return allMessages.reverse();
+}
+
+export async function resolveUserNames(
+  client: WebClient,
+  userIds: string[],
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const unique = [...new Set(userIds)];
+
+  await Promise.all(
+    unique.map(async (id) => {
+      try {
+        const result = await client.users.info({ user: id });
+        const user = result.user;
+        const name = user?.profile?.display_name || user?.real_name || user?.name || id;
+        names.set(id, name);
+      } catch {
+        names.set(id, id);
+      }
+    }),
+  );
+
+  return names;
 }

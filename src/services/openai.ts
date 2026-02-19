@@ -10,16 +10,61 @@ interface ChannelMessage {
 }
 
 const SYSTEM_PROMPT = `You are a helpful assistant that summarises Slack channel conversations.
-Given a series of messages from a temporary Slack channel, produce a concise summary (3-8 bullet points) of:
-- Key decisions made
-- Action items agreed upon
-- Important outcomes or conclusions
+Given a series of messages from a temporary Slack channel, produce a concise summary of what was discussed and decided. Use as few bullet points as necessary — often just 1-2 is enough.
 
-Use plain text without markdown formatting. Each bullet point should start with "- ".
-Be factual and concise. Do not invent information that is not present in the messages.`;
+Focus exclusively on:
+- Outcomes, decisions, and conclusions reached
+- Action items agreed upon
+
+Do NOT include:
+- Any mention of the channel itself (creation, purpose, or metadata)
+- Direct quotes from messages
+- Play-by-play accounts of who said what
+- Attribution to specific users unless essential to understanding the outcome
+- Filler bullet points like "no further decisions were made" or "nothing else was discussed"
+
+Write in the past tense as a neutral observer. Use plain text without markdown formatting. Each bullet point should start with "- ".
+Every bullet point must convey meaningful information. If the conversation only had one outcome, use a single bullet point.`;
+
+const USER_MENTION_REGEX = /<@([A-Z0-9]+)>/g;
+
+export function extractUserIds(messages: ChannelMessage[]): string[] {
+  const ids = new Set<string>();
+  for (const m of messages) {
+    ids.add(m.user);
+    for (const match of m.text.matchAll(USER_MENTION_REGEX)) {
+      ids.add(match[1]);
+    }
+  }
+  return [...ids];
+}
+
+export function resolveNamesInMessages(
+  messages: ChannelMessage[],
+  userNames: Map<string, string>,
+): ChannelMessage[] {
+  return messages.map((m) => ({
+    user: userNames.get(m.user) ?? m.user,
+    text: m.text.replace(USER_MENTION_REGEX, (_, id) => userNames.get(id) ?? id),
+  }));
+}
+
+export function restoreUserMentions(text: string, userNames: Map<string, string>): string {
+  // Build a reverse map: display name -> <@USER_ID>
+  // Sort by name length descending to match longer names first
+  const replacements = [...userNames.entries()]
+    .map(([id, name]) => ({ name, mention: `<@${id}>` }))
+    .sort((a, b) => b.name.length - a.name.length);
+
+  let result = text;
+  for (const { name, mention } of replacements) {
+    result = result.split(name).join(mention);
+  }
+  return result;
+}
 
 function buildUserPrompt(messages: ChannelMessage[]): string {
-  const formatted = messages.map((m) => `<@${m.user}>: ${m.text}`).join("\n");
+  const formatted = messages.map((m) => `${m.user}: ${m.text}`).join("\n");
   return `Here are the messages from the channel:\n\n${formatted}\n\nPlease summarise the key outcomes and decisions from this conversation.`;
 }
 
@@ -64,7 +109,6 @@ export async function generateSummary(client: OpenAI, messages: ChannelMessage[]
       { role: "user", content: buildUserPrompt(messages) },
     ],
     max_completion_tokens: 1024,
-    temperature: 0.3,
   });
 
   const content = response.choices[0]?.message?.content;

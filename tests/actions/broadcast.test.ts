@@ -6,6 +6,7 @@ import { createMockApp, createMockClient, createMockLogger } from "../helpers/mo
 
 vi.mock("../../src/services/channelHistory", () => ({
   fetchChannelMessages: vi.fn().mockResolvedValue([]),
+  resolveUserNames: vi.fn().mockResolvedValue(new Map()),
 }));
 
 vi.mock("../../src/services/openai", async (importOriginal) => {
@@ -56,7 +57,7 @@ describe("registerBroadcastAction", () => {
           trigger_id: "T123",
           view: expect.objectContaining({
             callback_id: "broadcast_submit",
-            private_metadata: "C_SRC",
+            private_metadata: JSON.stringify({ channelId: "C_SRC" }),
           }),
         }),
       );
@@ -106,7 +107,7 @@ describe("registerBroadcastAction", () => {
         ack: vi.fn(),
         body: { user: { id: "USUBMITTER" } },
         view: {
-          private_metadata: "C_SRC",
+          private_metadata: JSON.stringify({ channelId: "C_SRC" }),
           state: {
             values: {
               destination_channel: {
@@ -259,7 +260,7 @@ describe("registerBroadcastAction", () => {
         body: {
           view: {
             id: "V123",
-            private_metadata: "C_SRC",
+            private_metadata: JSON.stringify({ channelId: "C_SRC" }),
             state: {
               values: {
                 destination_channel: {
@@ -310,18 +311,16 @@ describe("registerBroadcastAction", () => {
       const updateCalls = payload.client.views.update.mock.calls;
       expect(updateCalls.length).toBeGreaterThanOrEqual(2);
 
-      // First call: loading state with button hidden
+      // First call: loading state with spinner, no outcome input or AI button
       const firstView = (updateCalls[0][0] as { view: { blocks: unknown[] } }).view;
-      const firstOutcome = (
-        firstView.blocks as Array<{ block_id?: string; element?: { initial_value?: string } }>
-      ).find((b) => b.block_id === "outcome");
-      expect(firstOutcome?.element?.initial_value).toBe("Generating summary...");
-      const firstAiBlock = (firstView.blocks as Array<{ block_id?: string }>).find(
-        (b) => b.block_id === "ai_actions",
+      const firstBlockIds = (firstView.blocks as Array<{ block_id?: string }>).map(
+        (b) => b.block_id,
       );
-      expect(firstAiBlock).toBeUndefined();
+      expect(firstBlockIds).toContain("loading");
+      expect(firstBlockIds).not.toContain("outcome");
+      expect(firstBlockIds).not.toContain("ai_actions");
 
-      // Last call: actual summary with button restored
+      // Last call: actual summary with outcome input and AI button restored
       const lastView = (updateCalls[updateCalls.length - 1][0] as { view: { blocks: unknown[] } })
         .view;
       const lastOutcome = (
