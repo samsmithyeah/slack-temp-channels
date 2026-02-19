@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 
 const OPENAI_MODEL = "gpt-5-mini";
-const MAX_PROMPT_MESSAGES = 100;
+const MAX_PROMPT_MESSAGES = 300;
 const MAX_CHARS_PER_MESSAGE = 500;
 
 interface ChannelMessage {

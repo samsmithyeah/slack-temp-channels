@@ -52,15 +52,15 @@ describe("formatMessagesForPrompt", () => {
     expect(result[0].text).toBe(text);
   });
 
-  it("limits to 100 messages, keeping the most recent", () => {
-    const messages = Array.from({ length: 150 }, (_, i) => ({
+  it("limits to 300 messages, keeping the most recent", () => {
+    const messages = Array.from({ length: 400 }, (_, i) => ({
       user: "U1",
       text: `message ${i}`,
     }));
     const result = formatMessagesForPrompt(messages);
-    expect(result).toHaveLength(100);
-    expect(result[0].text).toBe("message 50");
-    expect(result[99].text).toBe("message 149");
+    expect(result).toHaveLength(300);
+    expect(result[0].text).toBe("message 100");
+    expect(result[299].text).toBe("message 399");
   });
 });
 

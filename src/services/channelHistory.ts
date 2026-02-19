@@ -1,6 +1,6 @@
 import type { WebClient } from "@slack/web-api";
 
-const MAX_PAGES = 1;
+const MAX_PAGES = 3;
 const MESSAGES_PER_PAGE = 100;
 
 interface RawMessage {

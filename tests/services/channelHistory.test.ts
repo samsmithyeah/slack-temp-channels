@@ -50,7 +50,7 @@ describe("fetchChannelMessages", () => {
       "C123",
     );
 
-    expect(client.conversations.history).toHaveBeenCalledTimes(1);
+    expect(client.conversations.history).toHaveBeenCalledTimes(3);
   });
 
   it("returns empty array when no messages", async () => {
