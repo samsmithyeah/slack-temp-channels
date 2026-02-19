@@ -23,10 +23,17 @@ function buildUserPrompt(messages: ChannelMessage[]): string {
   return `Here are the messages from the channel:\n\n${formatted}\n\nPlease summarise the key outcomes and decisions from this conversation.`;
 }
 
+export class ApiKeyMissingError extends Error {
+  constructor() {
+    super("OPENAI_API_KEY environment variable is not set");
+    this.name = "ApiKeyMissingError";
+  }
+}
+
 export function createOpenAIClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY environment variable is not set");
+    throw new ApiKeyMissingError();
   }
   return new OpenAI({ apiKey });
 }
@@ -41,7 +48,10 @@ export function formatMessagesForPrompt(
     )
     .map((m) => ({
       user: m.user,
-      text: m.text.slice(0, MAX_CHARS_PER_MESSAGE),
+      text:
+        m.text.length > MAX_CHARS_PER_MESSAGE
+          ? `${m.text.slice(0, MAX_CHARS_PER_MESSAGE - 3)}...`
+          : m.text,
     }))
     .slice(-MAX_PROMPT_MESSAGES);
 }

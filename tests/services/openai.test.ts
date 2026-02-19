@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ApiKeyMissingError,
   createOpenAIClient,
   formatMessagesForPrompt,
   generateSummary,
@@ -35,10 +36,17 @@ describe("formatMessagesForPrompt", () => {
     expect(result).toEqual([{ user: "U2", text: "real message" }]);
   });
 
-  it("truncates messages longer than 500 characters", () => {
+  it("truncates messages longer than 500 characters with ellipsis", () => {
     const longText = "a".repeat(600);
     const result = formatMessagesForPrompt([{ user: "U1", text: longText }]);
     expect(result[0].text).toHaveLength(500);
+    expect(result[0].text).toMatch(/\.\.\.$/);
+  });
+
+  it("does not truncate messages at or under 500 characters", () => {
+    const text = "a".repeat(500);
+    const result = formatMessagesForPrompt([{ user: "U1", text }]);
+    expect(result[0].text).toBe(text);
   });
 
   it("limits to 100 messages, keeping the most recent", () => {
@@ -64,9 +72,9 @@ describe("createOpenAIClient", () => {
     }
   });
 
-  it("throws when OPENAI_API_KEY is not set", () => {
+  it("throws ApiKeyMissingError when OPENAI_API_KEY is not set", () => {
     delete process.env.OPENAI_API_KEY;
-    expect(() => createOpenAIClient()).toThrow("OPENAI_API_KEY environment variable is not set");
+    expect(() => createOpenAIClient()).toThrow(ApiKeyMissingError);
   });
 
   it("returns a client when key is set", () => {

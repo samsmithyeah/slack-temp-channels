@@ -2,7 +2,12 @@ import type { App } from "@slack/bolt";
 import { ERR_ARCHIVE_PERMISSION } from "../constants";
 import { broadcastModal } from "../modals/broadcast";
 import { fetchChannelMessages } from "../services/channelHistory";
-import { createOpenAIClient, formatMessagesForPrompt, generateSummary } from "../services/openai";
+import {
+  ApiKeyMissingError,
+  createOpenAIClient,
+  formatMessagesForPrompt,
+  generateSummary,
+} from "../services/openai";
 import type { ActionBody, ModalViewState } from "../types";
 import { getSlackErrorCode } from "../utils";
 
@@ -73,7 +78,7 @@ export function registerBroadcastAction(app: App): void {
       logger.error("Failed to generate AI summary:", error);
 
       const errorMessage =
-        error instanceof Error && error.message.includes("OPENAI_API_KEY")
+        error instanceof ApiKeyMissingError
           ? "OpenAI API key is not configured. Please contact your workspace admin."
           : "Failed to generate summary. Please try again or write one manually.";
 

@@ -8,14 +8,19 @@ vi.mock("../../src/services/channelHistory", () => ({
   fetchChannelMessages: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("../../src/services/openai", () => ({
-  createOpenAIClient: vi.fn().mockReturnValue({}),
-  formatMessagesForPrompt: vi.fn().mockReturnValue([]),
-  generateSummary: vi.fn().mockResolvedValue("AI generated summary"),
-}));
+vi.mock("../../src/services/openai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/services/openai")>();
+  return {
+    ...actual,
+    createOpenAIClient: vi.fn().mockReturnValue({}),
+    formatMessagesForPrompt: vi.fn().mockReturnValue([]),
+    generateSummary: vi.fn().mockResolvedValue("AI generated summary"),
+  };
+});
 
 import { fetchChannelMessages } from "../../src/services/channelHistory";
 import {
+  ApiKeyMissingError,
   createOpenAIClient,
   formatMessagesForPrompt,
   generateSummary,
@@ -382,7 +387,7 @@ describe("registerBroadcastAction", () => {
 
     it("shows specific message when API key is missing", async () => {
       vi.mocked(createOpenAIClient).mockImplementation(() => {
-        throw new Error("OPENAI_API_KEY environment variable is not set");
+        throw new ApiKeyMissingError();
       });
 
       const payload = makeActionPayload();
