@@ -1,10 +1,13 @@
 import type { App } from "@slack/bolt";
 import { ERR_ARCHIVE_PERMISSION } from "../constants";
 import { broadcastModal } from "../modals/broadcast";
-import type { ActionBody } from "../types";
+import { fetchChannelMessages } from "../services/channelHistory";
+import { createOpenAIClient, formatMessagesForPrompt, generateSummary } from "../services/openai";
+import type { ActionBody, ModalViewState } from "../types";
 import { getSlackErrorCode } from "../utils";
 
 export function registerBroadcastAction(app: App): void {
+  let openaiClient: ReturnType<typeof createOpenAIClient> | undefined;
   // Open the broadcast modal when button is clicked
   app.action("broadcast_and_close", async ({ ack, body, client, logger }) => {
     await ack();
@@ -22,6 +25,66 @@ export function registerBroadcastAction(app: App): void {
       });
     } catch (error) {
       logger.error("Failed to open broadcast modal:", error);
+    }
+  });
+
+  // Generate AI summary from channel messages
+  app.action("generate_ai_summary", async ({ ack, body, client, logger }) => {
+    await ack();
+
+    const view = (body as unknown as { view: ModalViewState }).view;
+    const sourceChannelId = view.private_metadata;
+
+    const currentDestination =
+      view.state.values.destination_channel?.destination_channel_input?.selected_conversation ??
+      undefined;
+
+    try {
+      await client.views.update({
+        view_id: view.id,
+        view: broadcastModal(sourceChannelId, currentDestination, "Generating summary...", true),
+      });
+
+      const rawMessages = await fetchChannelMessages(client, sourceChannelId);
+      const formattedMessages = formatMessagesForPrompt(rawMessages);
+
+      if (formattedMessages.length === 0) {
+        await client.views.update({
+          view_id: view.id,
+          view: broadcastModal(
+            sourceChannelId,
+            currentDestination,
+            "No messages found in channel to summarise.",
+          ),
+        });
+        return;
+      }
+
+      if (!openaiClient) {
+        openaiClient = createOpenAIClient();
+      }
+      const summary = await generateSummary(openaiClient, formattedMessages);
+
+      await client.views.update({
+        view_id: view.id,
+        view: broadcastModal(sourceChannelId, currentDestination, summary),
+      });
+    } catch (error) {
+      logger.error("Failed to generate AI summary:", error);
+
+      const errorMessage =
+        error instanceof Error && error.message.includes("OPENAI_API_KEY")
+          ? "OpenAI API key is not configured. Please contact your workspace admin."
+          : "Failed to generate summary. Please try again or write one manually.";
+
+      try {
+        await client.views.update({
+          view_id: view.id,
+          view: broadcastModal(sourceChannelId, currentDestination, errorMessage),
+        });
+      } catch (updateError) {
+        logger.error("Failed to update modal with error state:", updateError);
+      }
     }
   });
 

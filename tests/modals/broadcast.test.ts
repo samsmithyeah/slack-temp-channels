@@ -46,4 +46,37 @@ describe("broadcastModal", () => {
     const destBlock = findInputBlock(view.blocks, "destination_channel");
     expect(destBlock.element.initial_conversation).toBeUndefined();
   });
+
+  it("includes the AI summary button block", () => {
+    const view = broadcastModal("C_SOURCE");
+    const blockIds = getBlockIds(view.blocks);
+    expect(blockIds).toContain("ai_actions");
+  });
+
+  it("AI button has correct action_id", () => {
+    const view = broadcastModal("C_SOURCE");
+    const aiBlock = view.blocks.find((b) => "block_id" in b && b.block_id === "ai_actions") as
+      | { elements: Array<{ action_id: string }> }
+      | undefined;
+    expect(aiBlock).toBeDefined();
+    expect(aiBlock!.elements[0].action_id).toBe("generate_ai_summary");
+  });
+
+  it("sets initial_value on outcome when initialOutcome is provided", () => {
+    const view = broadcastModal("C_SOURCE", undefined, "AI summary text");
+    const outcomeBlock = findInputBlock(view.blocks, "outcome");
+    expect(outcomeBlock.element.initial_value).toBe("AI summary text");
+  });
+
+  it("omits initial_value on outcome when initialOutcome is not provided", () => {
+    const view = broadcastModal("C_SOURCE");
+    const outcomeBlock = findInputBlock(view.blocks, "outcome");
+    expect(outcomeBlock.element.initial_value).toBeUndefined();
+  });
+
+  it("hides AI button when hideAiButton is true", () => {
+    const view = broadcastModal("C_SOURCE", undefined, "Loading...", true);
+    const blockIds = getBlockIds(view.blocks);
+    expect(blockIds).not.toContain("ai_actions");
+  });
 });

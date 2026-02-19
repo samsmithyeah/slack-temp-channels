@@ -4,6 +4,8 @@ import { LABEL_BROADCAST_CLOSE } from "../constants";
 export function broadcastModal(
   sourceChannelId: string,
   defaultDestinationChannelId?: string,
+  initialOutcome?: string,
+  hideAiButton?: boolean,
 ): View {
   return {
     type: "modal",
@@ -44,12 +46,31 @@ export function broadcastModal(
           type: "plain_text_input",
           action_id: "outcome_input",
           multiline: true,
+          ...(initialOutcome ? { initial_value: initialOutcome } : {}),
           placeholder: {
             type: "plain_text",
             text: "What was decided or accomplished?",
           },
         },
       },
+      ...(hideAiButton
+        ? []
+        : [
+            {
+              type: "actions" as const,
+              block_id: "ai_actions",
+              elements: [
+                {
+                  type: "button" as const,
+                  text: {
+                    type: "plain_text" as const,
+                    text: ":sparkles: Generate summary with AI",
+                  },
+                  action_id: "generate_ai_summary",
+                },
+              ],
+            },
+          ]),
     ],
   };
 }
