@@ -30,6 +30,8 @@
         "channels:read",
         "channels:join",
         "chat:write",
+        "pins:read",
+        "pins:write",
         "commands",
         "users:read"
       ]

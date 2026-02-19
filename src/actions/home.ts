@@ -1,41 +1,244 @@
 import type { App } from "@slack/bolt";
-import { APP_HOME_DESCRIPTION, APP_HOME_HEADING, LABEL_CREATE } from "../constants";
+import type { ActionsBlock, KnownBlock } from "@slack/types";
+import type { WebClient } from "@slack/web-api";
+import {
+  APP_HOME_DESCRIPTION,
+  APP_HOME_HEADING,
+  CHANNEL_PREFIX,
+  ERR_ARCHIVE_PERMISSION,
+  LABEL_CREATE,
+} from "../constants";
 import { createChannelModal } from "../modals/create";
+import { getSlackErrorCode } from "../utils";
+
+const CACHE_TTL_MS = 30_000;
+const dashChannelCache = new Map<
+  string,
+  { data: { created: DashChannel[]; memberOf: DashChannel[] }; timestamp: number }
+>();
+
+interface DashChannel {
+  id: string;
+  name: string;
+}
+
+interface PinItem {
+  message?: { text?: string };
+}
+
+interface Logger {
+  error(...args: unknown[]): void;
+}
+
+function extractCreatorFromPins(items: PinItem[] | undefined): string | undefined {
+  if (!items) return undefined;
+  for (const item of items) {
+    const match = item.message?.text?.match(/<@(\w+)> created this temporary channel/);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
+async function fetchDashChannels(
+  client: WebClient,
+  userId: string,
+): Promise<{ created: DashChannel[]; memberOf: DashChannel[] }> {
+  // Get all public channels the bot is in, filter by dash prefix
+  const dashChannels: DashChannel[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = await client.users.conversations({
+      types: "public_channel",
+      exclude_archived: true,
+      limit: 200,
+      cursor,
+    });
+    for (const ch of result.channels ?? []) {
+      if (ch.id && ch.name?.startsWith(CHANNEL_PREFIX)) {
+        dashChannels.push({ id: ch.id, name: ch.name });
+      }
+    }
+    cursor = result.response_metadata?.next_cursor || undefined;
+  } while (cursor);
+
+  if (dashChannels.length === 0) return { created: [], memberOf: [] };
+
+  // Check membership for each channel in parallel
+  const memberChecks = await Promise.allSettled(
+    dashChannels.map((ch) => client.conversations.members({ channel: ch.id, limit: 500 })),
+  );
+
+  const userChannels = dashChannels.filter((_, i) => {
+    const result = memberChecks[i];
+    return result.status === "fulfilled" && result.value.members?.includes(userId);
+  });
+
+  if (userChannels.length === 0) return { created: [], memberOf: [] };
+
+  // Get pinned messages to identify creator in parallel
+  const pinChecks = await Promise.allSettled(
+    userChannels.map((ch) => client.pins.list({ channel: ch.id })),
+  );
+
+  const created: DashChannel[] = [];
+  const memberOf: DashChannel[] = [];
+
+  for (let i = 0; i < userChannels.length; i++) {
+    const ch = userChannels[i];
+    const pinResult = pinChecks[i];
+    let isCreator = false;
+    if (pinResult.status === "fulfilled") {
+      const creatorId = extractCreatorFromPins(pinResult.value.items as PinItem[]);
+      isCreator = creatorId === userId;
+    }
+
+    if (isCreator) {
+      created.push(ch);
+    } else {
+      memberOf.push(ch);
+    }
+  }
+
+  return { created, memberOf };
+}
+
+function channelSectionBlocks(
+  title: string,
+  channels: DashChannel[],
+  emptyText: string,
+  showClose: boolean,
+): KnownBlock[] {
+  const blocks: KnownBlock[] = [
+    {
+      type: "header",
+      text: { type: "plain_text", text: title },
+    },
+  ];
+
+  if (channels.length === 0) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: emptyText },
+    });
+    return blocks;
+  }
+
+  for (const ch of channels) {
+    const elements: ActionsBlock["elements"] = [
+      {
+        type: "button",
+        text: { type: "plain_text", text: "Jump to" },
+        url: `https://slack.com/app_redirect?channel=${ch.id}`,
+        action_id: `home_jump_${ch.id}`,
+      },
+    ];
+
+    if (showClose) {
+      elements.push({
+        type: "button",
+        text: { type: "plain_text", text: "Close" },
+        style: "danger",
+        action_id: `home_close_${ch.id}`,
+        value: ch.id,
+        confirm: {
+          title: { type: "plain_text", text: "Close this channel?" },
+          text: {
+            type: "mrkdwn",
+            text: "This will archive the channel. This action cannot be undone.",
+          },
+          confirm: { type: "plain_text", text: "Close it" },
+          deny: { type: "plain_text", text: "Cancel" },
+        },
+      });
+    }
+
+    blocks.push(
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: `<#${ch.id}>` },
+      },
+      {
+        type: "actions",
+        elements,
+      },
+    );
+  }
+
+  return blocks;
+}
+
+async function publishHomeView(client: WebClient, userId: string, logger: Logger): Promise<void> {
+  let created: DashChannel[] = [];
+  let memberOf: DashChannel[] = [];
+
+  try {
+    const cached = dashChannelCache.get(userId);
+    const now = Date.now();
+    let data: { created: DashChannel[]; memberOf: DashChannel[] };
+    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+      data = cached.data;
+    } else {
+      data = await fetchDashChannels(client, userId);
+      dashChannelCache.set(userId, { data, timestamp: now });
+    }
+    created = data.created;
+    memberOf = data.memberOf;
+  } catch (error) {
+    logger.error("Failed to fetch dash channels for home view:", error);
+  }
+
+  const blocks: KnownBlock[] = [
+    {
+      type: "header",
+      text: { type: "plain_text", text: APP_HOME_HEADING },
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: APP_HOME_DESCRIPTION },
+    },
+    { type: "divider" },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: LABEL_CREATE },
+          style: "primary",
+          action_id: "home_create_dash",
+        },
+      ],
+    },
+    { type: "divider" },
+    ...channelSectionBlocks(
+      "Channels you created",
+      created,
+      "_You haven't created any dash channels yet._",
+      true,
+    ),
+    { type: "divider" },
+    ...channelSectionBlocks(
+      "Your dash channels",
+      memberOf,
+      "_You're not a member of any other dash channels._",
+      false,
+    ),
+  ];
+
+  await client.views.publish({
+    user_id: userId,
+    view: { type: "home", blocks },
+  });
+}
+
+/** @internal Exposed for tests only */
+export function _clearCacheForTesting(): void {
+  dashChannelCache.clear();
+}
 
 export function registerHomeHandlers(app: App): void {
   app.event("app_home_opened", async ({ event, client, logger }) => {
     try {
-      await client.views.publish({
-        user_id: event.user,
-        view: {
-          type: "home",
-          blocks: [
-            {
-              type: "header",
-              text: { type: "plain_text", text: APP_HOME_HEADING },
-            },
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: APP_HOME_DESCRIPTION,
-              },
-            },
-            { type: "divider" },
-            {
-              type: "actions",
-              elements: [
-                {
-                  type: "button",
-                  text: { type: "plain_text", text: LABEL_CREATE },
-                  style: "primary",
-                  action_id: "home_create_dash",
-                },
-              ],
-            },
-          ],
-        },
-      });
+      await publishHomeView(client, event.user, logger);
     } catch (error) {
       logger.error("Failed to publish app home:", error);
     }
@@ -51,6 +254,52 @@ export function registerHomeHandlers(app: App): void {
       });
     } catch (error) {
       logger.error("Failed to open modal from home:", error);
+    }
+  });
+
+  app.action(/^home_jump_/, async ({ ack }) => {
+    await ack();
+  });
+
+  app.action(/^home_close_/, async ({ ack, body, client, logger }) => {
+    await ack();
+
+    const action = (body as unknown as { actions: Array<{ value: string }> }).actions[0];
+    const channelId = action.value;
+    const userId = body.user.id;
+
+    try {
+      await client.chat.postMessage({
+        channel: channelId,
+        text: `This channel was closed by <@${userId}>`,
+      });
+    } catch (error) {
+      logger.error("Failed to post close message:", error);
+    }
+
+    try {
+      await client.conversations.archive({ channel: channelId });
+    } catch (error: unknown) {
+      logger.error("Failed to archive channel:", error);
+      const code = getSlackErrorCode(error);
+      if (code === "not_authorized" || code === "restricted_action") {
+        try {
+          await client.chat.postMessage({
+            channel: channelId,
+            text: ERR_ARCHIVE_PERMISSION,
+          });
+        } catch {
+          // Channel might already be archived
+        }
+      }
+    }
+
+    // Refresh the home view to remove the closed channel
+    dashChannelCache.delete(userId);
+    try {
+      await publishHomeView(client, userId, logger);
+    } catch (error) {
+      logger.error("Failed to refresh home view after close:", error);
     }
   });
 }
