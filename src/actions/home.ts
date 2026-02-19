@@ -1,5 +1,5 @@
 import type { App } from "@slack/bolt";
-import type { ActionsBlock, KnownBlock } from "@slack/types";
+import type { KnownBlock } from "@slack/types";
 import type { WebClient } from "@slack/web-api";
 import {
   APP_HOME_DESCRIPTION,
@@ -133,44 +133,33 @@ function channelSectionBlocks(
   }
 
   for (const ch of channels) {
-    const elements: ActionsBlock["elements"] = [
-      {
-        type: "button",
-        text: { type: "plain_text", text: "Jump to" },
-        url: `https://slack.com/app_redirect?channel=${ch.id}`,
-        action_id: `home_jump_${ch.id}`,
-      },
-    ];
-
     if (showClose) {
-      elements.push({
-        type: "button",
-        text: { type: "plain_text", text: "Close" },
-        style: "danger",
-        action_id: `home_close_${ch.id}`,
-        value: ch.id,
-        confirm: {
-          title: { type: "plain_text", text: "Close this channel?" },
-          text: {
-            type: "mrkdwn",
-            text: "This will archive the channel. This action cannot be undone.",
-          },
-          confirm: { type: "plain_text", text: "Close it" },
-          deny: { type: "plain_text", text: "Cancel" },
-        },
-      });
-    }
-
-    blocks.push(
-      {
+      blocks.push({
         type: "section",
         text: { type: "mrkdwn", text: `<#${ch.id}>` },
-      },
-      {
-        type: "actions",
-        elements,
-      },
-    );
+        accessory: {
+          type: "button",
+          text: { type: "plain_text", text: "Close" },
+          style: "danger",
+          action_id: `home_close_${ch.id}`,
+          value: ch.id,
+          confirm: {
+            title: { type: "plain_text", text: "Close this channel?" },
+            text: {
+              type: "mrkdwn",
+              text: "This will archive the channel. This action cannot be undone.",
+            },
+            confirm: { type: "plain_text", text: "Close it" },
+            deny: { type: "plain_text", text: "Cancel" },
+          },
+        },
+      });
+    } else {
+      blocks.push({
+        type: "section",
+        text: { type: "mrkdwn", text: `<#${ch.id}>` },
+      });
+    }
   }
 
   return blocks;
@@ -275,10 +264,6 @@ export function registerHomeHandlers(app: App): void {
     } catch (error) {
       logger.error("Failed to open modal from home:", error);
     }
-  });
-
-  app.action(/^home_jump_/, async ({ ack }) => {
-    await ack();
   });
 
   app.action(/^home_close_/, async ({ ack, body, client, logger }) => {

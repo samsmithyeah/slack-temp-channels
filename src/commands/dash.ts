@@ -1,5 +1,5 @@
 import type { App } from "@slack/bolt";
-import { CHANNEL_PREFIX, CHANNEL_TOPIC, ERR_CHANNEL_SETUP } from "../constants";
+import { CHANNEL_PREFIX, CHANNEL_TOPIC, CREATOR_MSG_TEXT, ERR_CHANNEL_SETUP } from "../constants";
 import { createChannelModal } from "../modals/create";
 import { getSlackErrorCode, parseUserIds, slugify, welcomeBlocks } from "../utils";
 
@@ -93,7 +93,7 @@ export function registerDashCommand(app: App): void {
       // Post and pin welcome message
       const welcome = await client.chat.postMessage({
         channel: channelId,
-        text: `Temporary channel created by <@${creatorId}>`,
+        text: `<@${creatorId}> ${CREATOR_MSG_TEXT}`,
         blocks: welcomeBlocks(creatorId, purpose, userIds),
       });
       if (welcome.ts) {
