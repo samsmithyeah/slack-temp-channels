@@ -459,6 +459,9 @@ describe("registerHomeHandlers", () => {
     it("posts a close message, archives the channel, and refreshes the view", async () => {
       const ack = vi.fn();
       const client = createMockClient();
+      client.pins.list.mockResolvedValue({
+        items: [{ message: { text: "*<@U_CLOSER> created this temporary channel.*" } }],
+      });
 
       await app.handlers["action:/^home_close_/"]({
         ack,
@@ -487,6 +490,9 @@ describe("registerHomeHandlers", () => {
     it("handles archive permission errors", async () => {
       const ack = vi.fn();
       const client = createMockClient();
+      client.pins.list.mockResolvedValue({
+        items: [{ message: { text: "*<@U_CLOSER> created this temporary channel.*" } }],
+      });
       client.conversations.archive.mockRejectedValue({
         data: { error: "not_authorized" },
       });
@@ -504,6 +510,34 @@ describe("registerHomeHandlers", () => {
           channel: "C_TARGET",
           text: expect.stringContaining("permission"),
         }),
+      );
+    });
+
+    it("rejects close from a non-creator user", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+      const logger = createMockLogger();
+      client.pins.list.mockResolvedValue({
+        items: [{ message: { text: "*<@U_ACTUAL_CREATOR> created this temporary channel.*" } }],
+      });
+
+      await app.handlers["action:/^home_close_/"]({
+        ack,
+        body: { user: { id: "U_ATTACKER" }, actions: [{ value: "C_TARGET" }] },
+        client,
+        logger,
+      });
+
+      expect(ack).toHaveBeenCalled();
+      // Should NOT archive or post a close message
+      expect(client.conversations.archive).not.toHaveBeenCalled();
+      expect(client.chat.postMessage).not.toHaveBeenCalled();
+      // Should log the unauthorized attempt
+      expect(logger.error).toHaveBeenCalledWith(
+        "Unauthorized close attempt by",
+        "U_ATTACKER",
+        "on channel",
+        "C_TARGET",
       );
     });
   });

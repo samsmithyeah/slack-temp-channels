@@ -63,14 +63,26 @@ async function fetchDashChannels(
 
   if (dashChannels.length === 0) return { created: [], memberOf: [] };
 
-  // Check membership for each channel in parallel
+  // Check membership for each channel in parallel (paginated)
   const memberChecks = await Promise.allSettled(
-    dashChannels.map((ch) => client.conversations.members({ channel: ch.id, limit: 500 })),
+    dashChannels.map(async (ch) => {
+      let cursor: string | undefined;
+      do {
+        const page = await client.conversations.members({
+          channel: ch.id,
+          limit: 1000,
+          cursor,
+        });
+        if (page.members?.includes(userId)) return true;
+        cursor = page.response_metadata?.next_cursor || undefined;
+      } while (cursor);
+      return false;
+    }),
   );
 
   const userChannels = dashChannels.filter((_, i) => {
     const result = memberChecks[i];
-    return result.status === "fulfilled" && result.value.members?.includes(userId);
+    return result.status === "fulfilled" && result.value;
   });
 
   if (userChannels.length === 0) return { created: [], memberOf: [] };
@@ -267,6 +279,19 @@ export function registerHomeHandlers(app: App): void {
     const action = (body as unknown as { actions: Array<{ value: string }> }).actions[0];
     const channelId = action.value;
     const userId = body.user.id;
+
+    // Verify the user is the channel creator before allowing close
+    try {
+      const pinsResult = await client.pins.list({ channel: channelId });
+      const creatorId = extractCreatorFromPins(pinsResult.items as PinItem[]);
+      if (creatorId !== userId) {
+        logger.error("Unauthorized close attempt by", userId, "on channel", channelId);
+        return;
+      }
+    } catch (error) {
+      logger.error("Failed to verify channel creator:", error);
+      return;
+    }
 
     try {
       await client.chat.postMessage({
