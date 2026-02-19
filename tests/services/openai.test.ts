@@ -142,7 +142,7 @@ describe("generateSummary", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
         temperature: 0.3,
       }),
     );
