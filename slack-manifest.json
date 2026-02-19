@@ -27,6 +27,7 @@
     "scopes": {
       "bot": [
         "channels:manage",
+        "channels:history",
         "channels:read",
         "channels:join",
         "chat:write",

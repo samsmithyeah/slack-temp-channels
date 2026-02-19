@@ -11,7 +11,9 @@ describe("broadcastModal", () => {
 
   it("stores sourceChannelId in private_metadata", () => {
     const view = broadcastModal("C_SOURCE");
-    expect(view.private_metadata).toBe("C_SOURCE");
+    expect(JSON.parse(view.private_metadata!)).toEqual(
+      expect.objectContaining({ channelId: "C_SOURCE" }),
+    );
   });
 
   it("has destination_channel and outcome blocks", () => {
@@ -45,5 +47,53 @@ describe("broadcastModal", () => {
     const view = broadcastModal("C_SOURCE");
     const destBlock = findInputBlock(view.blocks, "destination_channel");
     expect(destBlock.element.initial_conversation).toBeUndefined();
+  });
+
+  it("includes the AI summary button block", () => {
+    const view = broadcastModal("C_SOURCE");
+    const blockIds = getBlockIds(view.blocks);
+    expect(blockIds).toContain("ai_actions");
+  });
+
+  it("AI button has correct action_id", () => {
+    const view = broadcastModal("C_SOURCE");
+    const aiBlock = view.blocks.find((b) => "block_id" in b && b.block_id === "ai_actions") as
+      | { elements: Array<{ action_id: string }> }
+      | undefined;
+    expect(aiBlock).toBeDefined();
+    expect(aiBlock!.elements[0].action_id).toBe("generate_ai_summary");
+  });
+
+  it("sets initial_value on outcome when initialOutcome is provided", () => {
+    const view = broadcastModal("C_SOURCE", undefined, "AI summary text");
+    const outcomeBlock = findInputBlock(view.blocks, "outcome");
+    expect(outcomeBlock.element.initial_value).toBe("AI summary text");
+  });
+
+  it("omits initial_value on outcome when initialOutcome is not provided", () => {
+    const view = broadcastModal("C_SOURCE");
+    const outcomeBlock = findInputBlock(view.blocks, "outcome");
+    expect(outcomeBlock.element.initial_value).toBeUndefined();
+  });
+
+  describe("loading state", () => {
+    it("shows loading section instead of outcome input and AI button", () => {
+      const view = broadcastModal("C_SOURCE", undefined, undefined, true);
+      const blockIds = getBlockIds(view.blocks);
+      expect(blockIds).toContain("loading");
+      expect(blockIds).not.toContain("outcome");
+      expect(blockIds).not.toContain("ai_actions");
+    });
+
+    it("keeps the submit button when loading", () => {
+      const view = broadcastModal("C_SOURCE", undefined, undefined, true);
+      expect((view as { submit?: unknown }).submit).toBeDefined();
+    });
+
+    it("preserves destination channel during loading", () => {
+      const view = broadcastModal("C_SOURCE", "C_DEST", undefined, true);
+      const destBlock = findInputBlock(view.blocks, "destination_channel");
+      expect(destBlock.element.initial_conversation).toBe("C_DEST");
+    });
   });
 });

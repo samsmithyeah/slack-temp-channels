@@ -1,10 +1,30 @@
-import type { App } from "@slack/bolt";
+import type { App, BlockAction } from "@slack/bolt";
 import { ERR_ARCHIVE_PERMISSION } from "../constants";
-import { broadcastModal } from "../modals/broadcast";
+import { type BroadcastMetadata, broadcastModal } from "../modals/broadcast";
+import { fetchChannelMessages, resolveUserNames } from "../services/channelHistory";
+import {
+  ApiKeyMissingError,
+  createOpenAIClient,
+  extractUserIds,
+  formatMessagesForPrompt,
+  generateSummary,
+  resolveNamesInMessages,
+  restoreUserMentions,
+} from "../services/openai";
 import type { ActionBody } from "../types";
 import { getSlackErrorCode } from "../utils";
 
+function parseMetadata(raw: string): BroadcastMetadata {
+  try {
+    return JSON.parse(raw) as BroadcastMetadata;
+  } catch {
+    // Backwards compatibility: old modals stored just the channel ID
+    return { channelId: raw };
+  }
+}
+
 export function registerBroadcastAction(app: App): void {
+  let openaiClient: ReturnType<typeof createOpenAIClient> | undefined;
   // Open the broadcast modal when button is clicked
   app.action("broadcast_and_close", async ({ ack, body, client, logger }) => {
     await ack();
@@ -25,6 +45,68 @@ export function registerBroadcastAction(app: App): void {
     }
   });
 
+  // Generate AI summary from channel messages
+  app.action("generate_ai_summary", async ({ ack, body, client, logger }) => {
+    await ack();
+
+    const view = (body as BlockAction).view!;
+    const { channelId: sourceChannelId } = parseMetadata(view.private_metadata);
+
+    const currentDestination =
+      view.state.values.destination_channel?.destination_channel_input?.selected_conversation ??
+      undefined;
+
+    try {
+      await client.views.update({
+        view_id: view.id,
+        view: broadcastModal(sourceChannelId, currentDestination, undefined, true),
+      });
+
+      const rawMessages = await fetchChannelMessages(client, sourceChannelId);
+      const formattedMessages = formatMessagesForPrompt(rawMessages);
+
+      if (formattedMessages.length === 0) {
+        await client.views.update({
+          view_id: view.id,
+          view: broadcastModal(
+            sourceChannelId,
+            currentDestination,
+            "No messages found in channel to summarise.",
+          ),
+        });
+        return;
+      }
+
+      const userIds = extractUserIds(formattedMessages);
+      const userNames = await resolveUserNames(client, userIds);
+      const resolvedMessages = resolveNamesInMessages(formattedMessages, userNames);
+
+      openaiClient ??= createOpenAIClient();
+      const summary = await generateSummary(openaiClient, resolvedMessages);
+
+      await client.views.update({
+        view_id: view.id,
+        view: broadcastModal(sourceChannelId, currentDestination, summary, false, userNames),
+      });
+    } catch (error) {
+      logger.error("Failed to generate AI summary:", error);
+
+      const errorMessage =
+        error instanceof ApiKeyMissingError
+          ? "OpenAI API key is not configured. Please contact your workspace admin."
+          : "Failed to generate summary. Please try again or write one manually.";
+
+      try {
+        await client.views.update({
+          view_id: view.id,
+          view: broadcastModal(sourceChannelId, currentDestination, errorMessage),
+        });
+      } catch (updateError) {
+        logger.error("Failed to update modal with error state:", updateError);
+      }
+    }
+  });
+
   // Handle broadcast modal submission
   app.view("broadcast_submit", async ({ ack, body, view, client, logger }) => {
     await ack();
@@ -32,9 +114,15 @@ export function registerBroadcastAction(app: App): void {
     const values = view.state.values;
     const destinationChannelId =
       values.destination_channel.destination_channel_input.selected_conversation!;
-    const outcome = values.outcome.outcome_input.value!;
-    const sourceChannelId = view.private_metadata;
+    const rawOutcome = values.outcome.outcome_input.value!;
+    const { channelId: sourceChannelId, userNames: userNamesRecord } = parseMetadata(
+      view.private_metadata,
+    );
     const userId = body.user.id;
+
+    // Restore display names to Slack mentions for the posted message
+    const userNamesMap = new Map(Object.entries(userNamesRecord ?? {}));
+    const outcome = restoreUserMentions(rawOutcome, userNamesMap);
 
     try {
       // Join destination channel so the bot can post (ignore if already joined)
