@@ -68,10 +68,10 @@ describe("registerHomeHandlers", () => {
       });
       client.pins.list
         .mockResolvedValueOnce({
-          items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
+          items: [{ message: { user: "U_BOT", text: `<@U_VISITOR> ${CREATOR_MSG_TEXT}` } }],
         })
         .mockResolvedValueOnce({
-          items: [{ message: { user: "U_BOT", text: `*<@U_OTHER> ${CREATOR_MSG_TEXT}.*` } }],
+          items: [{ message: { user: "U_BOT", text: `<@U_OTHER> ${CREATOR_MSG_TEXT}` } }],
         });
 
       await app.handlers["event:app_home_opened"]({
@@ -105,10 +105,10 @@ describe("registerHomeHandlers", () => {
       });
       client.pins.list
         .mockResolvedValueOnce({
-          items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
+          items: [{ message: { user: "U_BOT", text: `<@U_VISITOR> ${CREATOR_MSG_TEXT}` } }],
         })
         .mockResolvedValueOnce({
-          items: [{ message: { user: "U_BOT", text: `*<@U_OTHER> ${CREATOR_MSG_TEXT}.*` } }],
+          items: [{ message: { user: "U_BOT", text: `<@U_OTHER> ${CREATOR_MSG_TEXT}` } }],
         });
 
       await app.handlers["event:app_home_opened"]({
@@ -208,7 +208,7 @@ describe("registerHomeHandlers", () => {
         response_metadata: {},
       });
       client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
+        items: [{ message: { user: "U_BOT", text: `<@U_VISITOR> ${CREATOR_MSG_TEXT}` } }],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -246,7 +246,7 @@ describe("registerHomeHandlers", () => {
         response_metadata: {},
       });
       client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `*<@U_OTHER> ${CREATOR_MSG_TEXT}.*` } }],
+        items: [{ message: { user: "U_BOT", text: `<@U_OTHER> ${CREATOR_MSG_TEXT}` } }],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -346,7 +346,7 @@ describe("registerHomeHandlers", () => {
           response_metadata: {},
         });
       client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
+        items: [{ message: { user: "U_BOT", text: `<@U_VISITOR> ${CREATOR_MSG_TEXT}` } }],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -428,7 +428,7 @@ describe("registerHomeHandlers", () => {
       const ack = vi.fn();
       const client = createMockClient();
       client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `*<@U_CLOSER> ${CREATOR_MSG_TEXT}.*` } }],
+        items: [{ message: { user: "U_BOT", text: `<@U_CLOSER> ${CREATOR_MSG_TEXT}` } }],
       });
 
       await app.handlers["action:/^home_close_/"]({
@@ -463,7 +463,7 @@ describe("registerHomeHandlers", () => {
       const ack = vi.fn();
       const client = createMockClient();
       client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `*<@U_CLOSER> ${CREATOR_MSG_TEXT}.*` } }],
+        items: [{ message: { user: "U_BOT", text: `<@U_CLOSER> ${CREATOR_MSG_TEXT}` } }],
       });
       client.conversations.archive.mockRejectedValue({
         data: { error: "not_authorized" },
@@ -498,7 +498,7 @@ describe("registerHomeHandlers", () => {
           {
             message: {
               user: "U_BOT",
-              text: `*<@U_ACTUAL_CREATOR> ${CREATOR_MSG_TEXT}.*`,
+              text: `<@U_ACTUAL_CREATOR> ${CREATOR_MSG_TEXT}`,
             },
           },
         ],
