@@ -68,10 +68,10 @@ describe("registerHomeHandlers", () => {
       });
       client.pins.list
         .mockResolvedValueOnce({
-          items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
+          items: [{ message: { user: "U_BOT", text: `<@U_VISITOR> ${CREATOR_MSG_TEXT}` } }],
         })
         .mockResolvedValueOnce({
-          items: [{ message: { user: "U_BOT", text: `*<@U_OTHER> ${CREATOR_MSG_TEXT}.*` } }],
+          items: [{ message: { user: "U_BOT", text: `<@U_OTHER> ${CREATOR_MSG_TEXT}` } }],
         });
 
       await app.handlers["event:app_home_opened"]({
@@ -105,10 +105,10 @@ describe("registerHomeHandlers", () => {
       });
       client.pins.list
         .mockResolvedValueOnce({
-          items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
+          items: [{ message: { user: "U_BOT", text: `<@U_VISITOR> ${CREATOR_MSG_TEXT}` } }],
         })
         .mockResolvedValueOnce({
-          items: [{ message: { user: "U_BOT", text: `*<@U_OTHER> ${CREATOR_MSG_TEXT}.*` } }],
+          items: [{ message: { user: "U_BOT", text: `<@U_OTHER> ${CREATOR_MSG_TEXT}` } }],
         });
 
       await app.handlers["event:app_home_opened"]({
@@ -200,7 +200,7 @@ describe("registerHomeHandlers", () => {
       expect(client.pins.list).toHaveBeenCalledWith(expect.objectContaining({ channel: "C_DASH" }));
     });
 
-    it("includes jump and close buttons for channels the user created", async () => {
+    it("includes Close accessory button for channels the user created", async () => {
       const client = createMockClient();
 
       client.users.conversations.mockResolvedValue({
@@ -208,51 +208,7 @@ describe("registerHomeHandlers", () => {
         response_metadata: {},
       });
       client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
-      });
-
-      await app.handlers["event:app_home_opened"]({
-        event: { user: "U_VISITOR" },
-        context: { teamId: "T_TEAM" },
-        client,
-        logger: createMockLogger(),
-      });
-
-      const viewArg = client.views.publish.mock.calls[0][0] as {
-        view: {
-          blocks: Array<{
-            type: string;
-            elements?: Array<{ action_id?: string; url?: string; value?: string }>;
-          }>;
-        };
-      };
-      const blocks = viewArg.view.blocks;
-      const channelActions = blocks.filter(
-        (b) =>
-          b.type === "actions" && b.elements?.some((el) => el.action_id?.startsWith("home_jump_")),
-      );
-
-      expect(channelActions).toHaveLength(1);
-      const elements = channelActions[0].elements!;
-
-      const jumpBtn = elements.find((el) => el.action_id === "home_jump_C_DASH1");
-      expect(jumpBtn).toBeDefined();
-      expect(jumpBtn!.url).toContain("C_DASH1");
-
-      const closeBtn = elements.find((el) => el.action_id === "home_close_C_DASH1");
-      expect(closeBtn).toBeDefined();
-      expect(closeBtn!.value).toBe("C_DASH1");
-    });
-
-    it("does not show Close button for channels the user did not create", async () => {
-      const client = createMockClient();
-
-      client.users.conversations.mockResolvedValue({
-        channels: [{ id: "C_OTHER", name: "-their-project" }],
-        response_metadata: {},
-      });
-      client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `*<@U_OTHER> ${CREATOR_MSG_TEXT}.*` } }],
+        items: [{ message: { user: "U_BOT", text: `<@U_VISITOR> ${CREATOR_MSG_TEXT}` } }],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -267,30 +223,61 @@ describe("registerHomeHandlers", () => {
           blocks: Array<{
             type: string;
             text?: { type: string; text: string };
-            elements?: Array<{ action_id?: string }>;
+            accessory?: { action_id?: string; value?: string };
+          }>;
+        };
+      };
+      const blocks = viewArg.view.blocks;
+      const channelSection = blocks.find(
+        (b) => b.type === "section" && b.text?.text === "<#C_DASH1>",
+      );
+
+      expect(channelSection).toBeDefined();
+      expect(channelSection!.accessory).toBeDefined();
+      expect(channelSection!.accessory!.action_id).toBe("home_close_C_DASH1");
+      expect(channelSection!.accessory!.value).toBe("C_DASH1");
+    });
+
+    it("does not show Close button for channels the user did not create", async () => {
+      const client = createMockClient();
+
+      client.users.conversations.mockResolvedValue({
+        channels: [{ id: "C_OTHER", name: "-their-project" }],
+        response_metadata: {},
+      });
+      client.pins.list.mockResolvedValue({
+        items: [{ message: { user: "U_BOT", text: `<@U_OTHER> ${CREATOR_MSG_TEXT}` } }],
+      });
+
+      await app.handlers["event:app_home_opened"]({
+        event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
+        client,
+        logger: createMockLogger(),
+      });
+
+      const viewArg = client.views.publish.mock.calls[0][0] as {
+        view: {
+          blocks: Array<{
+            type: string;
+            text?: { type: string; text: string };
+            accessory?: { action_id?: string };
           }>;
         };
       };
       const blocks = viewArg.view.blocks;
 
-      // Find the "Your dash channels" section actions
+      // Find channel section in "Your dash channels"
       const memberHeaderIdx = blocks.findIndex(
         (b) => b.type === "header" && b.text?.text === "Your dash channels",
       );
-      const memberActions = blocks
+      const memberSections = blocks
         .slice(memberHeaderIdx)
-        .filter(
-          (b) =>
-            b.type === "actions" &&
-            b.elements?.some((el) => el.action_id?.startsWith("home_jump_")),
-        );
+        .filter((b) => b.type === "section" && b.text?.text?.startsWith("<#"));
 
-      expect(memberActions).toHaveLength(1);
-      const elements = memberActions[0].elements!;
-
-      // Should have Jump but NOT Close
-      expect(elements.find((el) => el.action_id === "home_jump_C_OTHER")).toBeDefined();
-      expect(elements.find((el) => el.action_id?.startsWith("home_close_"))).toBeUndefined();
+      expect(memberSections).toHaveLength(1);
+      // Should NOT have a Close accessory
+      expect(memberSections[0].accessory).toBeUndefined();
     });
 
     it("logs error and skips publish when teamId is missing", async () => {
@@ -359,7 +346,7 @@ describe("registerHomeHandlers", () => {
           response_metadata: {},
         });
       client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
+        items: [{ message: { user: "U_BOT", text: `<@U_VISITOR> ${CREATOR_MSG_TEXT}` } }],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -432,20 +419,6 @@ describe("registerHomeHandlers", () => {
     });
   });
 
-  describe("home_jump action", () => {
-    it("registers the action handler", () => {
-      expect(app.handlers["action:/^home_jump_/"]).toBeDefined();
-    });
-
-    it("acknowledges the action", async () => {
-      const ack = vi.fn();
-
-      await app.handlers["action:/^home_jump_/"]({ ack });
-
-      expect(ack).toHaveBeenCalled();
-    });
-  });
-
   describe("home_close action", () => {
     it("registers the action handler", () => {
       expect(app.handlers["action:/^home_close_/"]).toBeDefined();
@@ -455,7 +428,7 @@ describe("registerHomeHandlers", () => {
       const ack = vi.fn();
       const client = createMockClient();
       client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `*<@U_CLOSER> ${CREATOR_MSG_TEXT}.*` } }],
+        items: [{ message: { user: "U_BOT", text: `<@U_CLOSER> ${CREATOR_MSG_TEXT}` } }],
       });
 
       await app.handlers["action:/^home_close_/"]({
@@ -490,7 +463,7 @@ describe("registerHomeHandlers", () => {
       const ack = vi.fn();
       const client = createMockClient();
       client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `*<@U_CLOSER> ${CREATOR_MSG_TEXT}.*` } }],
+        items: [{ message: { user: "U_BOT", text: `<@U_CLOSER> ${CREATOR_MSG_TEXT}` } }],
       });
       client.conversations.archive.mockRejectedValue({
         data: { error: "not_authorized" },
@@ -525,7 +498,7 @@ describe("registerHomeHandlers", () => {
           {
             message: {
               user: "U_BOT",
-              text: `*<@U_ACTUAL_CREATOR> ${CREATOR_MSG_TEXT}.*`,
+              text: `<@U_ACTUAL_CREATOR> ${CREATOR_MSG_TEXT}`,
             },
           },
         ],
