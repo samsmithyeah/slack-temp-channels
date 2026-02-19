@@ -5,6 +5,7 @@ import {
   APP_HOME_DESCRIPTION,
   APP_HOME_HEADING,
   CHANNEL_PREFIX,
+  CREATOR_MSG_TEXT,
   ERR_ARCHIVE_PERMISSION,
   LABEL_CREATE,
 } from "../constants";
@@ -16,6 +17,10 @@ const dashChannelCache = new Map<
   string,
   { data: { created: DashChannel[]; memberOf: DashChannel[] }; timestamp: number }
 >();
+
+let cachedBotUserId: string | undefined;
+
+const CREATOR_REGEX = new RegExp(`<@(\\w+)> ${CREATOR_MSG_TEXT}`);
 
 interface DashChannel {
   id: string;
@@ -30,6 +35,13 @@ interface Logger {
   error(...args: unknown[]): void;
 }
 
+async function getBotUserId(client: WebClient): Promise<string> {
+  if (cachedBotUserId) return cachedBotUserId;
+  const result = await client.auth.test();
+  cachedBotUserId = result.user_id as string;
+  return cachedBotUserId;
+}
+
 function extractCreatorFromPins(
   items: PinItem[] | undefined,
   botUserId: string,
@@ -37,7 +49,7 @@ function extractCreatorFromPins(
   if (!items) return undefined;
   for (const item of items) {
     if (item.message?.user !== botUserId) continue;
-    const match = item.message?.text?.match(/<@(\w+)> created this temporary channel/);
+    const match = item.message?.text?.match(CREATOR_REGEX);
     if (match) return match[1];
   }
   return undefined;
@@ -47,14 +59,14 @@ async function fetchDashChannels(
   client: WebClient,
   userId: string,
 ): Promise<{ created: DashChannel[]; memberOf: DashChannel[] }> {
-  const authResult = await client.auth.test();
-  const botUserId = authResult.user_id as string;
+  const botUserId = await getBotUserId(client);
 
-  // Get all public channels the bot is in, filter by dash prefix
-  const dashChannels: DashChannel[] = [];
+  // Get dash channels the user is a member of directly
+  const userDashChannels: DashChannel[] = [];
   let cursor: string | undefined;
   do {
     const result = await client.users.conversations({
+      user: userId,
       types: "public_channel",
       exclude_archived: true,
       limit: 200,
@@ -62,48 +74,24 @@ async function fetchDashChannels(
     });
     for (const ch of result.channels ?? []) {
       if (ch.id && ch.name?.startsWith(CHANNEL_PREFIX)) {
-        dashChannels.push({ id: ch.id, name: ch.name });
+        userDashChannels.push({ id: ch.id, name: ch.name });
       }
     }
     cursor = result.response_metadata?.next_cursor || undefined;
   } while (cursor);
 
-  if (dashChannels.length === 0) return { created: [], memberOf: [] };
-
-  // Check membership for each channel in parallel (paginated)
-  const memberChecks = await Promise.allSettled(
-    dashChannels.map(async (ch) => {
-      let cursor: string | undefined;
-      do {
-        const page = await client.conversations.members({
-          channel: ch.id,
-          limit: 1000,
-          cursor,
-        });
-        if (page.members?.includes(userId)) return true;
-        cursor = page.response_metadata?.next_cursor || undefined;
-      } while (cursor);
-      return false;
-    }),
-  );
-
-  const userChannels = dashChannels.filter((_, i) => {
-    const result = memberChecks[i];
-    return result.status === "fulfilled" && result.value;
-  });
-
-  if (userChannels.length === 0) return { created: [], memberOf: [] };
+  if (userDashChannels.length === 0) return { created: [], memberOf: [] };
 
   // Get pinned messages to identify creator in parallel
   const pinChecks = await Promise.allSettled(
-    userChannels.map((ch) => client.pins.list({ channel: ch.id })),
+    userDashChannels.map((ch) => client.pins.list({ channel: ch.id })),
   );
 
   const created: DashChannel[] = [];
   const memberOf: DashChannel[] = [];
 
-  for (let i = 0; i < userChannels.length; i++) {
-    const ch = userChannels[i];
+  for (let i = 0; i < userDashChannels.length; i++) {
+    const ch = userDashChannels[i];
     const pinResult = pinChecks[i];
     let isCreator = false;
     if (pinResult.status === "fulfilled") {
@@ -252,6 +240,7 @@ async function publishHomeView(client: WebClient, userId: string, logger: Logger
 /** @internal Exposed for tests only */
 export function _clearCacheForTesting(): void {
   dashChannelCache.clear();
+  cachedBotUserId = undefined;
 }
 
 export function registerHomeHandlers(app: App): void {
@@ -283,17 +272,18 @@ export function registerHomeHandlers(app: App): void {
   app.action(/^home_close_/, async ({ ack, body, client, logger }) => {
     await ack();
 
-    const action = (body as unknown as { actions: Array<{ value: string }> }).actions[0];
+    const action = (body as unknown as { actions: Array<{ type: string; value?: string }> })
+      .actions[0];
+    if (action.type !== "button" || !action.value) return;
     const channelId = action.value;
     const userId = body.user.id;
 
     // Verify the user is the channel creator before allowing close
     try {
-      const [authResult, pinsResult] = await Promise.all([
-        client.auth.test(),
+      const [botUserId, pinsResult] = await Promise.all([
+        getBotUserId(client),
         client.pins.list({ channel: channelId }),
       ]);
-      const botUserId = authResult.user_id as string;
       const creatorId = extractCreatorFromPins(pinsResult.items as PinItem[], botUserId);
       if (creatorId !== userId) {
         logger.error("Unauthorized close attempt by", userId, "on channel", channelId);

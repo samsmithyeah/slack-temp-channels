@@ -63,9 +63,6 @@ describe("registerHomeHandlers", () => {
         ],
         response_metadata: {},
       });
-      client.conversations.members
-        .mockResolvedValueOnce({ members: ["U_VISITOR", "U_OTHER"] })
-        .mockResolvedValueOnce({ members: ["U_VISITOR", "U_OTHER"] });
       client.pins.list
         .mockResolvedValueOnce({
           items: [
@@ -106,9 +103,6 @@ describe("registerHomeHandlers", () => {
         ],
         response_metadata: {},
       });
-      client.conversations.members
-        .mockResolvedValueOnce({ members: ["U_VISITOR"] })
-        .mockResolvedValueOnce({ members: ["U_VISITOR", "U_OTHER"] });
       client.pins.list
         .mockResolvedValueOnce({
           items: [
@@ -194,7 +188,6 @@ describe("registerHomeHandlers", () => {
         ],
         response_metadata: {},
       });
-      client.conversations.members.mockResolvedValue({ members: ["U_VISITOR"] });
       client.pins.list.mockResolvedValue({ items: [] });
 
       await app.handlers["event:app_home_opened"]({
@@ -203,30 +196,9 @@ describe("registerHomeHandlers", () => {
         logger: createMockLogger(),
       });
 
-      // Only the dash channel should trigger a members check
-      expect(client.conversations.members).toHaveBeenCalledTimes(1);
-      expect(client.conversations.members).toHaveBeenCalledWith(
-        expect.objectContaining({ channel: "C_DASH" }),
-      );
-    });
-
-    it("skips channels the user is not a member of", async () => {
-      const client = createMockClient();
-
-      client.users.conversations.mockResolvedValue({
-        channels: [{ id: "C_DASH", name: "-temp" }],
-        response_metadata: {},
-      });
-      client.conversations.members.mockResolvedValue({ members: ["U_OTHER"] });
-
-      await app.handlers["event:app_home_opened"]({
-        event: { user: "U_VISITOR" },
-        client,
-        logger: createMockLogger(),
-      });
-
-      // pins.list should not be called since the user isn't in any channels
-      expect(client.pins.list).not.toHaveBeenCalled();
+      // Only the dash channel should trigger a pins check
+      expect(client.pins.list).toHaveBeenCalledTimes(1);
+      expect(client.pins.list).toHaveBeenCalledWith(expect.objectContaining({ channel: "C_DASH" }));
     });
 
     it("includes jump and close buttons for channels the user created", async () => {
@@ -236,7 +208,6 @@ describe("registerHomeHandlers", () => {
         channels: [{ id: "C_DASH1", name: "-project" }],
         response_metadata: {},
       });
-      client.conversations.members.mockResolvedValue({ members: ["U_VISITOR"] });
       client.pins.list.mockResolvedValue({
         items: [
           { message: { user: "U_BOT", text: "*<@U_VISITOR> created this temporary channel.*" } },
@@ -282,7 +253,6 @@ describe("registerHomeHandlers", () => {
         channels: [{ id: "C_OTHER", name: "-their-project" }],
         response_metadata: {},
       });
-      client.conversations.members.mockResolvedValue({ members: ["U_VISITOR", "U_OTHER"] });
       client.pins.list.mockResolvedValue({
         items: [
           { message: { user: "U_BOT", text: "*<@U_OTHER> created this temporary channel.*" } },
@@ -375,7 +345,6 @@ describe("registerHomeHandlers", () => {
           channels: [{ id: "C_PAGE2", name: "-page2" }],
           response_metadata: {},
         });
-      client.conversations.members.mockResolvedValue({ members: ["U_VISITOR"] });
       client.pins.list.mockResolvedValue({
         items: [
           { message: { user: "U_BOT", text: "*<@U_VISITOR> created this temporary channel.*" } },
@@ -481,7 +450,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["action:/^home_close_/"]({
         ack,
-        body: { user: { id: "U_CLOSER" }, actions: [{ value: "C_TARGET" }] },
+        body: { user: { id: "U_CLOSER" }, actions: [{ type: "button", value: "C_TARGET" }] },
         client,
         logger: createMockLogger(),
       });
@@ -517,7 +486,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["action:/^home_close_/"]({
         ack,
-        body: { user: { id: "U_CLOSER" }, actions: [{ value: "C_TARGET" }] },
+        body: { user: { id: "U_CLOSER" }, actions: [{ type: "button", value: "C_TARGET" }] },
         client,
         logger: createMockLogger(),
       });
@@ -548,7 +517,7 @@ describe("registerHomeHandlers", () => {
 
       await app.handlers["action:/^home_close_/"]({
         ack,
-        body: { user: { id: "U_ATTACKER" }, actions: [{ value: "C_TARGET" }] },
+        body: { user: { id: "U_ATTACKER" }, actions: [{ type: "button", value: "C_TARGET" }] },
         client,
         logger,
       });
