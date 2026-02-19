@@ -1,6 +1,7 @@
 import type { App } from "@slack/bolt";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { _clearCacheForTesting, registerHomeHandlers } from "../../src/actions/home";
+import { CREATOR_MSG_TEXT } from "../../src/constants";
 import { findInputBlock } from "../helpers/blocks";
 import { createMockApp, createMockClient, createMockLogger } from "../helpers/mock-app";
 
@@ -67,14 +68,10 @@ describe("registerHomeHandlers", () => {
       });
       client.pins.list
         .mockResolvedValueOnce({
-          items: [
-            { message: { user: "U_BOT", text: "*<@U_VISITOR> created this temporary channel.*" } },
-          ],
+          items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
         })
         .mockResolvedValueOnce({
-          items: [
-            { message: { user: "U_BOT", text: "*<@U_OTHER> created this temporary channel.*" } },
-          ],
+          items: [{ message: { user: "U_BOT", text: `*<@U_OTHER> ${CREATOR_MSG_TEXT}.*` } }],
         });
 
       await app.handlers["event:app_home_opened"]({
@@ -108,14 +105,10 @@ describe("registerHomeHandlers", () => {
       });
       client.pins.list
         .mockResolvedValueOnce({
-          items: [
-            { message: { user: "U_BOT", text: "*<@U_VISITOR> created this temporary channel.*" } },
-          ],
+          items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
         })
         .mockResolvedValueOnce({
-          items: [
-            { message: { user: "U_BOT", text: "*<@U_OTHER> created this temporary channel.*" } },
-          ],
+          items: [{ message: { user: "U_BOT", text: `*<@U_OTHER> ${CREATOR_MSG_TEXT}.*` } }],
         });
 
       await app.handlers["event:app_home_opened"]({
@@ -215,9 +208,7 @@ describe("registerHomeHandlers", () => {
         response_metadata: {},
       });
       client.pins.list.mockResolvedValue({
-        items: [
-          { message: { user: "U_BOT", text: "*<@U_VISITOR> created this temporary channel.*" } },
-        ],
+        items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -261,9 +252,7 @@ describe("registerHomeHandlers", () => {
         response_metadata: {},
       });
       client.pins.list.mockResolvedValue({
-        items: [
-          { message: { user: "U_BOT", text: "*<@U_OTHER> created this temporary channel.*" } },
-        ],
+        items: [{ message: { user: "U_BOT", text: `*<@U_OTHER> ${CREATOR_MSG_TEXT}.*` } }],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -302,6 +291,21 @@ describe("registerHomeHandlers", () => {
       // Should have Jump but NOT Close
       expect(elements.find((el) => el.action_id === "home_jump_C_OTHER")).toBeDefined();
       expect(elements.find((el) => el.action_id?.startsWith("home_close_"))).toBeUndefined();
+    });
+
+    it("logs error and skips publish when teamId is missing", async () => {
+      const client = createMockClient();
+      const logger = createMockLogger();
+
+      await app.handlers["event:app_home_opened"]({
+        event: { user: "U_VISITOR" },
+        context: {},
+        client,
+        logger,
+      });
+
+      expect(logger.error).toHaveBeenCalledWith("Missing teamId in app_home_opened event");
+      expect(client.views.publish).not.toHaveBeenCalled();
     });
 
     it("publishes with empty lists and logs error when fetchDashChannels throws", async () => {
@@ -355,9 +359,7 @@ describe("registerHomeHandlers", () => {
           response_metadata: {},
         });
       client.pins.list.mockResolvedValue({
-        items: [
-          { message: { user: "U_BOT", text: "*<@U_VISITOR> created this temporary channel.*" } },
-        ],
+        items: [{ message: { user: "U_BOT", text: `*<@U_VISITOR> ${CREATOR_MSG_TEXT}.*` } }],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -453,9 +455,7 @@ describe("registerHomeHandlers", () => {
       const ack = vi.fn();
       const client = createMockClient();
       client.pins.list.mockResolvedValue({
-        items: [
-          { message: { user: "U_BOT", text: "*<@U_CLOSER> created this temporary channel.*" } },
-        ],
+        items: [{ message: { user: "U_BOT", text: `*<@U_CLOSER> ${CREATOR_MSG_TEXT}.*` } }],
       });
 
       await app.handlers["action:/^home_close_/"]({
@@ -490,9 +490,7 @@ describe("registerHomeHandlers", () => {
       const ack = vi.fn();
       const client = createMockClient();
       client.pins.list.mockResolvedValue({
-        items: [
-          { message: { user: "U_BOT", text: "*<@U_CLOSER> created this temporary channel.*" } },
-        ],
+        items: [{ message: { user: "U_BOT", text: `*<@U_CLOSER> ${CREATOR_MSG_TEXT}.*` } }],
       });
       client.conversations.archive.mockRejectedValue({
         data: { error: "not_authorized" },
@@ -527,7 +525,7 @@ describe("registerHomeHandlers", () => {
           {
             message: {
               user: "U_BOT",
-              text: "*<@U_ACTUAL_CREATOR> created this temporary channel.*",
+              text: `*<@U_ACTUAL_CREATOR> ${CREATOR_MSG_TEXT}.*`,
             },
           },
         ],
@@ -563,6 +561,26 @@ describe("registerHomeHandlers", () => {
           text: "Only the channel creator can close this channel.",
         }),
       );
+    });
+
+    it("logs error and returns early when teamId is missing", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+      const logger = createMockLogger();
+
+      await app.handlers["action:/^home_close_/"]({
+        ack,
+        body: {
+          user: { id: "U_CLOSER" },
+          actions: [{ type: "button", value: "C_TARGET" }],
+        },
+        client,
+        logger,
+      });
+
+      expect(ack).toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalledWith("Missing teamId in home_close action");
+      expect(client.conversations.archive).not.toHaveBeenCalled();
     });
   });
 });

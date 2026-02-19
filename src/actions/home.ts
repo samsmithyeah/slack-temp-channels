@@ -253,8 +253,12 @@ export function _clearCacheForTesting(): void {
 
 export function registerHomeHandlers(app: App): void {
   app.event("app_home_opened", async ({ event, client, logger, context }) => {
+    if (!context.teamId) {
+      logger.error("Missing teamId in app_home_opened event");
+      return;
+    }
     try {
-      await publishHomeView(client, event.user, context.teamId ?? "", logger);
+      await publishHomeView(client, event.user, context.teamId, logger);
     } catch (error) {
       logger.error("Failed to publish app home:", error);
     }
@@ -282,10 +286,14 @@ export function registerHomeHandlers(app: App): void {
 
     const action = (body as unknown as { actions: Array<{ type: string; value?: string }> })
       .actions[0];
-    if (action.type !== "button" || !action.value) return;
+    if (!action || action.type !== "button" || !action.value) return;
     const channelId = action.value;
     const userId = body.user.id;
-    const teamId = body.team?.id ?? "";
+    const teamId = body.team?.id;
+    if (!teamId) {
+      logger.error("Missing teamId in home_close action");
+      return;
+    }
 
     // Verify the user is the channel creator before allowing close
     try {
