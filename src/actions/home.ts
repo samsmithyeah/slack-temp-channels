@@ -23,16 +23,20 @@ interface DashChannel {
 }
 
 interface PinItem {
-  message?: { text?: string };
+  message?: { text?: string; user?: string };
 }
 
 interface Logger {
   error(...args: unknown[]): void;
 }
 
-function extractCreatorFromPins(items: PinItem[] | undefined): string | undefined {
+function extractCreatorFromPins(
+  items: PinItem[] | undefined,
+  botUserId: string,
+): string | undefined {
   if (!items) return undefined;
   for (const item of items) {
+    if (item.message?.user !== botUserId) continue;
     const match = item.message?.text?.match(/<@(\w+)> created this temporary channel/);
     if (match) return match[1];
   }
@@ -43,6 +47,9 @@ async function fetchDashChannels(
   client: WebClient,
   userId: string,
 ): Promise<{ created: DashChannel[]; memberOf: DashChannel[] }> {
+  const authResult = await client.auth.test();
+  const botUserId = authResult.user_id as string;
+
   // Get all public channels the bot is in, filter by dash prefix
   const dashChannels: DashChannel[] = [];
   let cursor: string | undefined;
@@ -100,7 +107,7 @@ async function fetchDashChannels(
     const pinResult = pinChecks[i];
     let isCreator = false;
     if (pinResult.status === "fulfilled") {
-      const creatorId = extractCreatorFromPins(pinResult.value.items as PinItem[]);
+      const creatorId = extractCreatorFromPins(pinResult.value.items as PinItem[], botUserId);
       isCreator = creatorId === userId;
     }
 
@@ -282,14 +289,28 @@ export function registerHomeHandlers(app: App): void {
 
     // Verify the user is the channel creator before allowing close
     try {
-      const pinsResult = await client.pins.list({ channel: channelId });
-      const creatorId = extractCreatorFromPins(pinsResult.items as PinItem[]);
+      const [authResult, pinsResult] = await Promise.all([
+        client.auth.test(),
+        client.pins.list({ channel: channelId }),
+      ]);
+      const botUserId = authResult.user_id as string;
+      const creatorId = extractCreatorFromPins(pinsResult.items as PinItem[], botUserId);
       if (creatorId !== userId) {
         logger.error("Unauthorized close attempt by", userId, "on channel", channelId);
+        await client.chat.postEphemeral({
+          channel: channelId,
+          user: userId,
+          text: "Only the channel creator can close this channel.",
+        });
         return;
       }
     } catch (error) {
       logger.error("Failed to verify channel creator:", error);
+      await client.chat.postEphemeral({
+        channel: channelId,
+        user: userId,
+        text: "Unable to verify channel creator. Please try again.",
+      });
       return;
     }
 

@@ -2,6 +2,9 @@ import { vi } from "vitest";
 
 export function createMockClient() {
   return {
+    auth: {
+      test: vi.fn().mockResolvedValue({ user_id: "U_BOT" }),
+    },
     views: {
       open: vi.fn().mockResolvedValue({}),
       publish: vi.fn().mockResolvedValue({}),
@@ -21,6 +24,7 @@ export function createMockClient() {
     },
     chat: {
       postMessage: vi.fn().mockResolvedValue({ ts: "1234567890.123456" }),
+      postEphemeral: vi.fn().mockResolvedValue({}),
     },
     pins: {
       add: vi.fn().mockResolvedValue({}),

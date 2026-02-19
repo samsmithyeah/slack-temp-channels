@@ -68,10 +68,14 @@ describe("registerHomeHandlers", () => {
         .mockResolvedValueOnce({ members: ["U_VISITOR", "U_OTHER"] });
       client.pins.list
         .mockResolvedValueOnce({
-          items: [{ message: { text: "*<@U_VISITOR> created this temporary channel.*" } }],
+          items: [
+            { message: { user: "U_BOT", text: "*<@U_VISITOR> created this temporary channel.*" } },
+          ],
         })
         .mockResolvedValueOnce({
-          items: [{ message: { text: "*<@U_OTHER> created this temporary channel.*" } }],
+          items: [
+            { message: { user: "U_BOT", text: "*<@U_OTHER> created this temporary channel.*" } },
+          ],
         });
 
       await app.handlers["event:app_home_opened"]({
@@ -107,10 +111,14 @@ describe("registerHomeHandlers", () => {
         .mockResolvedValueOnce({ members: ["U_VISITOR", "U_OTHER"] });
       client.pins.list
         .mockResolvedValueOnce({
-          items: [{ message: { text: "*<@U_VISITOR> created this temporary channel.*" } }],
+          items: [
+            { message: { user: "U_BOT", text: "*<@U_VISITOR> created this temporary channel.*" } },
+          ],
         })
         .mockResolvedValueOnce({
-          items: [{ message: { text: "*<@U_OTHER> created this temporary channel.*" } }],
+          items: [
+            { message: { user: "U_BOT", text: "*<@U_OTHER> created this temporary channel.*" } },
+          ],
         });
 
       await app.handlers["event:app_home_opened"]({
@@ -230,7 +238,9 @@ describe("registerHomeHandlers", () => {
       });
       client.conversations.members.mockResolvedValue({ members: ["U_VISITOR"] });
       client.pins.list.mockResolvedValue({
-        items: [{ message: { text: "*<@U_VISITOR> created this temporary channel.*" } }],
+        items: [
+          { message: { user: "U_BOT", text: "*<@U_VISITOR> created this temporary channel.*" } },
+        ],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -274,7 +284,9 @@ describe("registerHomeHandlers", () => {
       });
       client.conversations.members.mockResolvedValue({ members: ["U_VISITOR", "U_OTHER"] });
       client.pins.list.mockResolvedValue({
-        items: [{ message: { text: "*<@U_OTHER> created this temporary channel.*" } }],
+        items: [
+          { message: { user: "U_BOT", text: "*<@U_OTHER> created this temporary channel.*" } },
+        ],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -365,7 +377,9 @@ describe("registerHomeHandlers", () => {
         });
       client.conversations.members.mockResolvedValue({ members: ["U_VISITOR"] });
       client.pins.list.mockResolvedValue({
-        items: [{ message: { text: "*<@U_VISITOR> created this temporary channel.*" } }],
+        items: [
+          { message: { user: "U_BOT", text: "*<@U_VISITOR> created this temporary channel.*" } },
+        ],
       });
 
       await app.handlers["event:app_home_opened"]({
@@ -460,7 +474,9 @@ describe("registerHomeHandlers", () => {
       const ack = vi.fn();
       const client = createMockClient();
       client.pins.list.mockResolvedValue({
-        items: [{ message: { text: "*<@U_CLOSER> created this temporary channel.*" } }],
+        items: [
+          { message: { user: "U_BOT", text: "*<@U_CLOSER> created this temporary channel.*" } },
+        ],
       });
 
       await app.handlers["action:/^home_close_/"]({
@@ -491,7 +507,9 @@ describe("registerHomeHandlers", () => {
       const ack = vi.fn();
       const client = createMockClient();
       client.pins.list.mockResolvedValue({
-        items: [{ message: { text: "*<@U_CLOSER> created this temporary channel.*" } }],
+        items: [
+          { message: { user: "U_BOT", text: "*<@U_CLOSER> created this temporary channel.*" } },
+        ],
       });
       client.conversations.archive.mockRejectedValue({
         data: { error: "not_authorized" },
@@ -518,7 +536,14 @@ describe("registerHomeHandlers", () => {
       const client = createMockClient();
       const logger = createMockLogger();
       client.pins.list.mockResolvedValue({
-        items: [{ message: { text: "*<@U_ACTUAL_CREATOR> created this temporary channel.*" } }],
+        items: [
+          {
+            message: {
+              user: "U_BOT",
+              text: "*<@U_ACTUAL_CREATOR> created this temporary channel.*",
+            },
+          },
+        ],
       });
 
       await app.handlers["action:/^home_close_/"]({
@@ -538,6 +563,14 @@ describe("registerHomeHandlers", () => {
         "U_ATTACKER",
         "on channel",
         "C_TARGET",
+      );
+      // Should send ephemeral feedback to the user
+      expect(client.chat.postEphemeral).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: "C_TARGET",
+          user: "U_ATTACKER",
+          text: "Only the channel creator can close this channel.",
+        }),
       );
     });
   });
