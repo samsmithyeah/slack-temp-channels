@@ -40,6 +40,28 @@ describe("registerBroadcastAction", () => {
       );
     });
 
+    it("passes button value as default destination channel", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+
+      await app.handlers["action:broadcast_and_close"]({
+        ack,
+        body: {
+          channel: { id: "C_SRC" },
+          trigger_id: "T123",
+          actions: [{ value: "C_ORIGIN" }],
+        },
+        client,
+        logger: createMockLogger(),
+      });
+
+      const viewArg = client.views.open.mock.calls[0][0] as {
+        view: { blocks: Array<{ block_id: string; element: { initial_conversation?: string } }> };
+      };
+      const destBlock = viewArg.view.blocks.find((b) => b.block_id === "destination_channel");
+      expect(destBlock!.element.initial_conversation).toBe("C_ORIGIN");
+    });
+
     it("returns early when no channel ID", async () => {
       const ack = vi.fn();
       const client = createMockClient();
@@ -95,6 +117,20 @@ describe("registerBroadcastAction", () => {
       expect(payload.client.conversations.join).toHaveBeenCalledWith({
         channel: "C_DEST",
       });
+    });
+
+    it("ignores already_in_channel error when joining destination", async () => {
+      const payload = makeViewPayload();
+      payload.client.conversations.join.mockRejectedValueOnce({
+        data: { error: "already_in_channel" },
+      });
+
+      await app.handlers["view:broadcast_submit"](payload);
+
+      // Broadcast should still succeed
+      expect(payload.client.chat.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ channel: "C_DEST" }),
+      );
     });
 
     it("posts summary to destination channel with blocks", async () => {

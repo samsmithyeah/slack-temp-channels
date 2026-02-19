@@ -34,4 +34,16 @@ describe("broadcastModal", () => {
     const outcomeBlock = findInputBlock(view.blocks, "outcome");
     expect(outcomeBlock.element.multiline).toBe(true);
   });
+
+  it("sets initial_conversation when defaultDestinationChannelId is provided", () => {
+    const view = broadcastModal("C_SOURCE", "C_ORIGIN");
+    const destBlock = findInputBlock(view.blocks, "destination_channel");
+    expect(destBlock.element.initial_conversation).toBe("C_ORIGIN");
+  });
+
+  it("omits initial_conversation when no defaultDestinationChannelId", () => {
+    const view = broadcastModal("C_SOURCE");
+    const destBlock = findInputBlock(view.blocks, "destination_channel");
+    expect(destBlock.element.initial_conversation).toBeUndefined();
+  });
 });

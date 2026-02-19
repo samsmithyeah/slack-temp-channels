@@ -1,5 +1,11 @@
 import type { App } from "@slack/bolt";
-import { CHANNEL_PREFIX, CHANNEL_TOPIC, CREATOR_MSG_TEXT, ERR_CHANNEL_SETUP } from "../constants";
+import {
+  CHANNEL_PREFIX,
+  CHANNEL_TOPIC,
+  CREATOR_MSG_TEXT,
+  ERR_CHANNEL_SETUP,
+  ORIGIN_MSG_TEXT,
+} from "../constants";
 import { createChannelModal } from "../modals/create";
 import { getSlackErrorCode, parseUserIds, slugify, welcomeBlocks } from "../utils";
 
@@ -12,7 +18,7 @@ export function registerDashCommand(app: App): void {
     try {
       await client.views.open({
         trigger_id: body.trigger_id,
-        view: createChannelModal(preselectedUserIds),
+        view: createChannelModal(preselectedUserIds, body.channel_id),
       });
     } catch (error) {
       logger.error("Failed to open create channel modal:", error);
@@ -20,6 +26,7 @@ export function registerDashCommand(app: App): void {
   });
 
   app.view("create_channel", async ({ ack, body, view, client, logger }) => {
+    const originChannelId = view.private_metadata || undefined;
     const values = view.state.values;
     const rawName = values.channel_name.channel_name_input.value!;
     const selectedUsers = values.invite_users.invite_users_input.selected_users!;
@@ -94,7 +101,7 @@ export function registerDashCommand(app: App): void {
       const welcome = await client.chat.postMessage({
         channel: channelId,
         text: `<@${creatorId}> ${CREATOR_MSG_TEXT}`,
-        blocks: welcomeBlocks(creatorId, purpose, userIds),
+        blocks: welcomeBlocks(creatorId, purpose, userIds, originChannelId),
       });
       if (welcome.ts) {
         await client.pins.add({ channel: channelId, timestamp: welcome.ts });
@@ -105,6 +112,40 @@ export function registerDashCommand(app: App): void {
         channel: channelId,
         text: ERR_CHANNEL_SETUP,
       });
+    }
+
+    // Notify the origin channel (slash-command flow only)
+    if (originChannelId) {
+      try {
+        const blocks = [
+          {
+            type: "section" as const,
+            text: {
+              type: "mrkdwn" as const,
+              text: `<@${creatorId}> created a new dash channel: <#${channelId}>`,
+            },
+          },
+          ...(purpose
+            ? [
+                {
+                  type: "section" as const,
+                  text: { type: "mrkdwn" as const, text: `*Purpose:* ${purpose}` },
+                },
+              ]
+            : []),
+          {
+            type: "context" as const,
+            elements: [{ type: "mrkdwn" as const, text: "Created with /dash" }],
+          },
+        ];
+        await client.chat.postMessage({
+          channel: originChannelId,
+          text: ORIGIN_MSG_TEXT,
+          blocks,
+        });
+      } catch (error) {
+        logger.error("Failed to notify origin channel:", error);
+      }
     }
   });
 }

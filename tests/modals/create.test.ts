@@ -47,4 +47,14 @@ describe("createChannelModal", () => {
     const usersBlock = findInputBlock(view.blocks, "invite_users");
     expect(usersBlock.element.initial_users).toBeUndefined();
   });
+
+  it("sets private_metadata when originChannelId is provided", () => {
+    const view = createChannelModal(["U1"], "C_ORIGIN");
+    expect(view.private_metadata).toBe("C_ORIGIN");
+  });
+
+  it("omits private_metadata when originChannelId is not provided", () => {
+    const view = createChannelModal(["U1"]);
+    expect(view.private_metadata).toBeUndefined();
+  });
 });
