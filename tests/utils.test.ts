@@ -154,4 +154,24 @@ describe("welcomeBlocks", () => {
     expect(closeBtn).toBeDefined();
     expect("confirm" in closeBtn! && closeBtn.confirm).toBeDefined();
   });
+
+  it("sets value on broadcast button when originChannelId is provided", () => {
+    const blocks = welcomeBlocks("UCREATOR", undefined, ["U1"], "C_ORIGIN");
+    const actions = blocks[3] as ActionsBlock;
+    const broadcastBtn = actions.elements.find(
+      (el) => "action_id" in el && el.action_id === "broadcast_and_close",
+    );
+    expect(broadcastBtn).toBeDefined();
+    expect("value" in broadcastBtn! && broadcastBtn.value).toBe("C_ORIGIN");
+  });
+
+  it("omits value on broadcast button when originChannelId is not provided", () => {
+    const blocks = welcomeBlocks("UCREATOR", undefined, ["U1"]);
+    const actions = blocks[3] as ActionsBlock;
+    const broadcastBtn = actions.elements.find(
+      (el) => "action_id" in el && el.action_id === "broadcast_and_close",
+    );
+    expect(broadcastBtn).toBeDefined();
+    expect("value" in broadcastBtn!).toBe(false);
+  });
 });

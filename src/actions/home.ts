@@ -7,20 +7,29 @@ import {
   CHANNEL_PREFIX,
   CREATOR_MSG_TEXT,
   ERR_ARCHIVE_PERMISSION,
+  LABEL_BROADCAST_CLOSE,
   LABEL_CREATE,
 } from "../constants";
+import { broadcastModal } from "../modals/broadcast";
 import { createChannelModal } from "../modals/create";
 import { getSlackErrorCode } from "../utils";
 
 const CACHE_TTL_MS = 30_000;
 const dashChannelCache = new Map<
   string,
-  { data: { created: DashChannel[]; memberOf: DashChannel[] }; timestamp: number }
+  {
+    data: { created: DashChannel[]; memberOf: DashChannel[] };
+    timestamp: number;
+  }
 >();
 
 const botUserIdCache = new Map<string, Promise<string>>();
 
-const CREATOR_REGEX = new RegExp(`<@(\\w+)> ${CREATOR_MSG_TEXT}`);
+// Matches both current and legacy pin text formats:
+//   current: "<@U123> created this temporary channel"
+//   legacy:  "Temporary channel created by <@U123>"
+const CREATOR_REGEX_CURRENT = new RegExp(String.raw`<@(\w+)> ${CREATOR_MSG_TEXT}`);
+const CREATOR_REGEX_LEGACY = /Temporary channel created by <@(\w+)>/;
 
 interface DashChannel {
   id: string;
@@ -50,7 +59,8 @@ function extractCreatorFromPins(
   if (!items) return undefined;
   for (const item of items) {
     if (item.message?.user !== botUserId) continue;
-    const match = item.message?.text?.match(CREATOR_REGEX);
+    const text = item.message?.text;
+    const match = text?.match(CREATOR_REGEX_CURRENT) ?? text?.match(CREATOR_REGEX_LEGACY);
     if (match) return match[1];
   }
   return undefined;
@@ -133,31 +143,38 @@ function channelSectionBlocks(
   }
 
   for (const ch of channels) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: `<#${ch.id}>` },
+    });
+
     if (showClose) {
       blocks.push({
-        type: "section",
-        text: { type: "mrkdwn", text: `<#${ch.id}>` },
-        accessory: {
-          type: "button",
-          text: { type: "plain_text", text: "Close" },
-          style: "danger",
-          action_id: `home_close_${ch.id}`,
-          value: ch.id,
-          confirm: {
-            title: { type: "plain_text", text: "Close this channel?" },
-            text: {
-              type: "mrkdwn",
-              text: "This will archive the channel. This action cannot be undone.",
-            },
-            confirm: { type: "plain_text", text: "Close it" },
-            deny: { type: "plain_text", text: "Cancel" },
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: LABEL_BROADCAST_CLOSE },
+            action_id: `home_broadcast_close_${ch.id}`,
+            value: ch.id,
           },
-        },
-      });
-    } else {
-      blocks.push({
-        type: "section",
-        text: { type: "mrkdwn", text: `<#${ch.id}>` },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Close channel" },
+            style: "danger",
+            action_id: `home_close_${ch.id}`,
+            value: ch.id,
+            confirm: {
+              title: { type: "plain_text", text: "Close this channel?" },
+              text: {
+                type: "mrkdwn",
+                text: "This will archive the channel. This action cannot be undone.",
+              },
+              confirm: { type: "plain_text", text: "Close it" },
+              deny: { type: "plain_text", text: "Cancel" },
+            },
+          },
+        ],
       });
     }
   }
@@ -214,14 +231,14 @@ async function publishHomeView(
     },
     { type: "divider" },
     ...channelSectionBlocks(
-      "Channels you created",
+      "Dash channels you created",
       created,
       "_You haven't created any dash channels yet._",
       true,
     ),
     { type: "divider" },
     ...channelSectionBlocks(
-      "Your dash channels",
+      "Other dash channels you're a member of",
       memberOf,
       "_You're not a member of any other dash channels._",
       false,
@@ -266,12 +283,30 @@ export function registerHomeHandlers(app: App): void {
     }
   });
 
+  app.action(/^home_broadcast_close_/, async ({ ack, body, client, logger }) => {
+    await ack();
+
+    const action = (body as unknown as { actions: Array<{ type: string; value?: string }> })
+      .actions[0];
+    if (action?.type !== "button" || !action?.value) return;
+    const channelId = action.value;
+
+    try {
+      await client.views.open({
+        trigger_id: (body as unknown as { trigger_id: string }).trigger_id,
+        view: broadcastModal(channelId),
+      });
+    } catch (error) {
+      logger.error("Failed to open broadcast modal from home:", error);
+    }
+  });
+
   app.action(/^home_close_/, async ({ ack, body, client, logger }) => {
     await ack();
 
     const action = (body as unknown as { actions: Array<{ type: string; value?: string }> })
       .actions[0];
-    if (!action || action.type !== "button" || !action.value) return;
+    if (action?.type !== "button" || !action?.value) return;
     const channelId = action.value;
     const userId = body.user.id;
     const teamId = body.team?.id;

@@ -5,8 +5,8 @@ export const CHANNEL_TOPIC =
 
 // Labels
 export const LABEL_CREATE = "Create a dash channel";
-export const LABEL_CLOSE = "Close Channel";
-export const LABEL_BROADCAST_CLOSE = "Broadcast & Close";
+export const LABEL_CLOSE = "Close channel";
+export const LABEL_BROADCAST_CLOSE = "Broadcast & close";
 
 // App Home
 export const APP_HOME_HEADING = "Dash: Temporary channels";
@@ -15,6 +15,9 @@ export const APP_HOME_DESCRIPTION =
 
 // Welcome message
 export const CREATOR_MSG_TEXT = "created this temporary channel";
+
+// Origin channel notification
+export const ORIGIN_MSG_TEXT = "New dash channel created";
 
 // Error messages
 export const ERR_ARCHIVE_PERMISSION =

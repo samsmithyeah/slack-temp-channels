@@ -1,7 +1,10 @@
 import type { View } from "@slack/types";
 import { LABEL_BROADCAST_CLOSE } from "../constants";
 
-export function broadcastModal(sourceChannelId: string): View {
+export function broadcastModal(
+  sourceChannelId: string,
+  defaultDestinationChannelId?: string,
+): View {
   return {
     type: "modal",
     callback_id: "broadcast_submit",
@@ -21,6 +24,12 @@ export function broadcastModal(sourceChannelId: string): View {
             include: ["public"],
             exclude_bot_users: true,
           },
+          ...(defaultDestinationChannelId
+            ? {
+                default_to_current_conversation: false,
+                initial_conversation: defaultDestinationChannelId,
+              }
+            : {}),
           placeholder: {
             type: "plain_text",
             text: "Select a channel",

@@ -129,13 +129,13 @@ describe("registerHomeHandlers", () => {
       };
       const blocks = viewArg.view.blocks;
 
-      // Find the "Channels you created" header index
+      // Find the "Dash channels you created" header index
       const createdHeaderIdx = blocks.findIndex(
-        (b) => b.type === "header" && b.text?.text === "Channels you created",
+        (b) => b.type === "header" && b.text?.text === "Dash channels you created",
       );
-      // Find the "Your dash channels" header index
+      // Find the "Other dash channels you're a member of" header index
       const memberHeaderIdx = blocks.findIndex(
-        (b) => b.type === "header" && b.text?.text === "Your dash channels",
+        (b) => b.type === "header" && b.text?.text === "Other dash channels you're a member of",
       );
 
       expect(createdHeaderIdx).toBeGreaterThan(-1);
@@ -154,6 +154,53 @@ describe("registerHomeHandlers", () => {
         .filter((b) => b.type === "section" && b.text?.text?.startsWith("<#"))
         .map((b) => b.text!.text);
       expect(memberChannels).toEqual(["<#C_OTHER>"]);
+    });
+
+    it("detects creator from legacy pin text format", async () => {
+      const client = createMockClient();
+
+      client.users.conversations.mockResolvedValue({
+        channels: [{ id: "C_LEGACY", name: "-old-channel" }],
+        response_metadata: {},
+      });
+      client.pins.list.mockResolvedValue({
+        items: [{ message: { user: "U_BOT", text: "Temporary channel created by <@U_VISITOR>" } }],
+      });
+
+      await app.handlers["event:app_home_opened"]({
+        event: { user: "U_VISITOR" },
+        context: { teamId: "T_TEAM" },
+        client,
+        logger: createMockLogger(),
+      });
+
+      const viewArg = client.views.publish.mock.calls[0][0] as {
+        view: {
+          blocks: Array<{
+            type: string;
+            text?: { type: string; text: string };
+            elements?: Array<{ action_id?: string }>;
+          }>;
+        };
+      };
+      const blocks = viewArg.view.blocks;
+
+      // Should be in "Dash channels you created" with action buttons
+      const createdHeaderIdx = blocks.findIndex(
+        (b) => b.type === "header" && b.text?.text === "Dash channels you created",
+      );
+      const memberHeaderIdx = blocks.findIndex(
+        (b) => b.type === "header" && b.text?.text === "Other dash channels you're a member of",
+      );
+      const createdBlocks = blocks.slice(createdHeaderIdx, memberHeaderIdx);
+      const createdSections = createdBlocks.filter(
+        (b) => b.type === "section" && b.text?.text?.startsWith("<#"),
+      );
+      expect(createdSections).toHaveLength(1);
+      expect(createdSections[0].text?.text).toBe("<#C_LEGACY>");
+      // Should have an actions block with close buttons
+      const actionBlocks = createdBlocks.filter((b) => b.type === "actions");
+      expect(actionBlocks).toHaveLength(1);
     });
 
     it("shows empty state messages when no channels exist", async () => {
@@ -200,7 +247,7 @@ describe("registerHomeHandlers", () => {
       expect(client.pins.list).toHaveBeenCalledWith(expect.objectContaining({ channel: "C_DASH" }));
     });
 
-    it("includes Close accessory button for channels the user created", async () => {
+    it("includes Broadcast & Close and Close channel buttons for creator channels", async () => {
       const client = createMockClient();
 
       client.users.conversations.mockResolvedValue({
@@ -223,22 +270,33 @@ describe("registerHomeHandlers", () => {
           blocks: Array<{
             type: string;
             text?: { type: string; text: string };
-            accessory?: { action_id?: string; value?: string };
+            elements?: Array<{ action_id?: string; value?: string; text?: { text: string } }>;
           }>;
         };
       };
       const blocks = viewArg.view.blocks;
-      const channelSection = blocks.find(
+
+      // Find the actions block following the channel section
+      const sectionIdx = blocks.findIndex(
         (b) => b.type === "section" && b.text?.text === "<#C_DASH1>",
       );
+      expect(sectionIdx).toBeGreaterThan(-1);
+      const actionsBlock = blocks[sectionIdx + 1];
+      expect(actionsBlock.type).toBe("actions");
 
-      expect(channelSection).toBeDefined();
-      expect(channelSection!.accessory).toBeDefined();
-      expect(channelSection!.accessory!.action_id).toBe("home_close_C_DASH1");
-      expect(channelSection!.accessory!.value).toBe("C_DASH1");
+      const elements = actionsBlock.elements!;
+      expect(elements).toHaveLength(2);
+
+      // Broadcast & Close button
+      expect(elements[0].action_id).toBe("home_broadcast_close_C_DASH1");
+      expect(elements[0].value).toBe("C_DASH1");
+
+      // Close channel button
+      expect(elements[1].action_id).toBe("home_close_C_DASH1");
+      expect(elements[1].value).toBe("C_DASH1");
     });
 
-    it("does not show Close button for channels the user did not create", async () => {
+    it("does not show action buttons for channels the user did not create", async () => {
       const client = createMockClient();
 
       client.users.conversations.mockResolvedValue({
@@ -261,23 +319,25 @@ describe("registerHomeHandlers", () => {
           blocks: Array<{
             type: string;
             text?: { type: string; text: string };
-            accessory?: { action_id?: string };
+            elements?: Array<{ action_id?: string }>;
           }>;
         };
       };
       const blocks = viewArg.view.blocks;
 
-      // Find channel section in "Your dash channels"
+      // Find blocks in "Other dash channels" section
       const memberHeaderIdx = blocks.findIndex(
-        (b) => b.type === "header" && b.text?.text === "Your dash channels",
+        (b) => b.type === "header" && b.text?.text === "Other dash channels you're a member of",
       );
-      const memberSections = blocks
-        .slice(memberHeaderIdx)
-        .filter((b) => b.type === "section" && b.text?.text?.startsWith("<#"));
+      const memberBlocks = blocks.slice(memberHeaderIdx);
 
-      expect(memberSections).toHaveLength(1);
-      // Should NOT have a Close accessory
-      expect(memberSections[0].accessory).toBeUndefined();
+      // Should have the channel section but no actions block
+      const sections = memberBlocks.filter(
+        (b) => b.type === "section" && b.text?.text?.startsWith("<#"),
+      );
+      expect(sections).toHaveLength(1);
+      const actionBlocks = memberBlocks.filter((b) => b.type === "actions");
+      expect(actionBlocks).toHaveLength(0);
     });
 
     it("logs error and skips publish when teamId is missing", async () => {
@@ -416,6 +476,39 @@ describe("registerHomeHandlers", () => {
         "invite_users",
       );
       expect(usersBlock.element.initial_users).toEqual(["UHOME"]);
+    });
+  });
+
+  describe("home_broadcast_close action", () => {
+    it("registers the action handler", () => {
+      expect(app.handlers["action:/^home_broadcast_close_/"]).toBeDefined();
+    });
+
+    it("acks and opens the broadcast modal with the channel ID", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+
+      await app.handlers["action:/^home_broadcast_close_/"]({
+        ack,
+        body: {
+          trigger_id: "T_BROADCAST",
+          user: { id: "U_CREATOR" },
+          actions: [{ type: "button", value: "C_TARGET" }],
+        },
+        client,
+        logger: createMockLogger(),
+      });
+
+      expect(ack).toHaveBeenCalled();
+      expect(client.views.open).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trigger_id: "T_BROADCAST",
+          view: expect.objectContaining({
+            callback_id: "broadcast_submit",
+            private_metadata: "C_TARGET",
+          }),
+        }),
+      );
     });
   });
 

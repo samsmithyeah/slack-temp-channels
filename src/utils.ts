@@ -29,6 +29,7 @@ export function welcomeBlocks(
   creatorId: string,
   purpose: string | undefined,
   invitedUserIds: string[],
+  originChannelId?: string,
 ): KnownBlock[] {
   const userList = invitedUserIds.map((id) => `<@${id}>`).join(", ");
   const purposeLine = purpose ? `\n>*Purpose:* ${purpose}` : "";
@@ -71,6 +72,7 @@ export function welcomeBlocks(
           type: "button",
           text: { type: "plain_text", text: LABEL_BROADCAST_CLOSE },
           action_id: "broadcast_and_close",
+          ...(originChannelId ? { value: originChannelId } : {}),
         },
       ],
     },

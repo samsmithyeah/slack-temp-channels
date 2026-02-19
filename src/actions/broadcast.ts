@@ -11,10 +11,13 @@ export function registerBroadcastAction(app: App): void {
     const channelId = body.channel?.id;
     if (!channelId) return;
 
+    const originChannelId =
+      (body as unknown as { actions?: Array<{ value?: string }> }).actions?.[0]?.value || undefined;
+
     try {
       await client.views.open({
         trigger_id: (body as unknown as { trigger_id: string }).trigger_id,
-        view: broadcastModal(channelId),
+        view: broadcastModal(channelId, originChannelId),
       });
     } catch (error) {
       logger.error("Failed to open broadcast modal:", error);
@@ -33,8 +36,12 @@ export function registerBroadcastAction(app: App): void {
     const userId = body.user.id;
 
     try {
-      // Join destination channel so the bot can post
-      await client.conversations.join({ channel: destinationChannelId });
+      // Join destination channel so the bot can post (ignore if already joined)
+      try {
+        await client.conversations.join({ channel: destinationChannelId });
+      } catch (error: unknown) {
+        if (getSlackErrorCode(error) !== "already_in_channel") throw error;
+      }
 
       // Post to destination channel
       await client.chat.postMessage({
