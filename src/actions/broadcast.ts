@@ -1,6 +1,7 @@
 import type { App } from "@slack/bolt";
 import { ERR_ARCHIVE_PERMISSION } from "../constants";
 import { broadcastModal } from "../modals/broadcast";
+import type { ActionBody } from "../types";
 import { getSlackErrorCode } from "../utils";
 
 export function registerBroadcastAction(app: App): void {
@@ -8,15 +9,15 @@ export function registerBroadcastAction(app: App): void {
   app.action("broadcast_and_close", async ({ ack, body, client, logger }) => {
     await ack();
 
-    const channelId = body.channel?.id;
+    const actionBody = body as unknown as ActionBody;
+    const channelId = actionBody.channel?.id;
     if (!channelId) return;
 
-    const originChannelId =
-      (body as unknown as { actions?: Array<{ value?: string }> }).actions?.[0]?.value || undefined;
+    const originChannelId = actionBody.actions?.[0]?.value || undefined;
 
     try {
       await client.views.open({
-        trigger_id: (body as unknown as { trigger_id: string }).trigger_id,
+        trigger_id: actionBody.trigger_id,
         view: broadcastModal(channelId, originChannelId),
       });
     } catch (error) {

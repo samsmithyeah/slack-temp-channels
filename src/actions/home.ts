@@ -12,6 +12,7 @@ import {
 } from "../constants";
 import { broadcastModal } from "../modals/broadcast";
 import { createChannelModal } from "../modals/create";
+import type { ActionBody } from "../types";
 import { getSlackErrorCode } from "../utils";
 
 const CACHE_TTL_MS = 30_000;
@@ -274,8 +275,9 @@ export function registerHomeHandlers(app: App): void {
     await ack();
 
     try {
+      const actionBody = body as unknown as ActionBody;
       await client.views.open({
-        trigger_id: (body as unknown as { trigger_id: string }).trigger_id,
+        trigger_id: actionBody.trigger_id,
         view: createChannelModal([body.user.id]),
       });
     } catch (error) {
@@ -286,14 +288,14 @@ export function registerHomeHandlers(app: App): void {
   app.action(/^home_broadcast_close_/, async ({ ack, body, client, logger }) => {
     await ack();
 
-    const action = (body as unknown as { actions: Array<{ type: string; value?: string }> })
-      .actions[0];
+    const actionBody = body as unknown as ActionBody;
+    const action = actionBody.actions?.[0];
     if (action?.type !== "button" || !action?.value) return;
     const channelId = action.value;
 
     try {
       await client.views.open({
-        trigger_id: (body as unknown as { trigger_id: string }).trigger_id,
+        trigger_id: actionBody.trigger_id,
         view: broadcastModal(channelId),
       });
     } catch (error) {
@@ -304,8 +306,8 @@ export function registerHomeHandlers(app: App): void {
   app.action(/^home_close_/, async ({ ack, body, client, logger }) => {
     await ack();
 
-    const action = (body as unknown as { actions: Array<{ type: string; value?: string }> })
-      .actions[0];
+    const actionBody = body as unknown as ActionBody;
+    const action = actionBody.actions?.[0];
     if (action?.type !== "button" || !action?.value) return;
     const channelId = action.value;
     const userId = body.user.id;
