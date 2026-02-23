@@ -34,7 +34,7 @@ export function broadcastModal(
           type: "conversations_select",
           action_id: "destination_channel_input",
           filter: {
-            include: ["public"],
+            include: ["public", "private"],
             exclude_bot_users: true,
           },
           ...(defaultDestinationChannelId
