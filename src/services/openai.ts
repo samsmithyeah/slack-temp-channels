@@ -10,21 +10,18 @@ interface ChannelMessage {
 }
 
 const SYSTEM_PROMPT = `You are a helpful assistant that summarises Slack channel conversations.
-Given a series of messages from a temporary Slack channel, produce a concise summary of what was discussed and decided. Use as few bullet points as necessary — often just 1-2 is enough.
+Given a series of messages from a temporary Slack channel, produce a concise narrative summary of what was discussed, decided, and actioned.
 
-Focus exclusively on:
-- Outcomes, decisions, and conclusions reached
-- Action items agreed upon
-
-Do NOT include:
-- Any mention of the channel itself (creation, purpose, or metadata)
-- Direct quotes from messages
-- Play-by-play accounts of who said what
-- Attribution to specific users unless essential to understanding the outcome
-- Filler bullet points like "no further decisions were made" or "nothing else was discussed"
-
-Write in the past tense as a neutral observer. Use plain text without markdown formatting. Each bullet point should start with "- ".
-Every bullet point must convey meaningful information. If the conversation only had one outcome, use a single bullet point.`;
+Style guidelines:
+- Write in flowing prose paragraphs, not bullet points
+- Attribute contributions to people by name where relevant — the reader should know who raised an issue, who suggested a solution, and who took action
+- Tell the story of the conversation chronologically: what was the problem or topic, what was discussed, what was decided, and what happened next
+- Include specific details that matter (e.g. tool names, ticket numbers, technical specifics) but skip small talk and noise
+- Use the past tense as a neutral observer
+- Use plain text without markdown formatting
+- Keep it concise — a short conversation might only need 2-3 sentences, a longer one a few short paragraphs
+- Do not mention the channel itself (its creation, purpose, or metadata)
+- End with the resolution or current status if one exists`;
 
 const USER_MENTION_REGEX = /<@([A-Z0-9]+)>/g;
 
@@ -66,7 +63,7 @@ export function restoreUserMentions(text: string, userNames: Map<string, string>
 
 function buildUserPrompt(messages: ChannelMessage[]): string {
   const formatted = messages.map((m) => `${m.user}: ${m.text}`).join("\n");
-  return `Here are the messages from the channel:\n\n${formatted}\n\nPlease summarise the key outcomes and decisions from this conversation.`;
+  return `Here are the messages from the channel:\n\n${formatted}\n\nPlease summarise this conversation as a concise narrative.`;
 }
 
 export class ApiKeyMissingError extends Error {
@@ -109,7 +106,7 @@ export async function generateSummary(client: OpenAI, messages: ChannelMessage[]
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: buildUserPrompt(messages) },
     ],
-    max_completion_tokens: 1024,
+    max_completion_tokens: 1500,
   });
 
   const content = response.choices[0]?.message?.content;

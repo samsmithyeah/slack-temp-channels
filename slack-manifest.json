@@ -34,7 +34,8 @@
         "pins:read",
         "pins:write",
         "commands",
-        "users:read"
+        "users:read",
+        "groups:read"
       ]
     }
   },
