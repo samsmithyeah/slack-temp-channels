@@ -125,11 +125,15 @@ export function registerBroadcastAction(app: App): void {
     const outcome = restoreUserMentions(rawOutcome, userNamesMap);
 
     try {
-      // Join destination channel so the bot can post (ignore if already joined)
+      // Join destination channel so the bot can post
+      // For private channels the bot is already in, join returns method_not_supported_for_channel_type
       try {
         await client.conversations.join({ channel: destinationChannelId });
       } catch (error: unknown) {
-        if (getSlackErrorCode(error) !== "already_in_channel") throw error;
+        const code = getSlackErrorCode(error);
+        if (code !== "already_in_channel" && code !== "method_not_supported_for_channel_type") {
+          throw error;
+        }
       }
 
       // Post to destination channel
