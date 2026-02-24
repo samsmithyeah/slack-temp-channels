@@ -168,10 +168,15 @@ export function registerBroadcastAction(app: App): void {
       });
 
       // Get destination channel name for the close message
-      const destInfo = await client.conversations.info({
-        channel: destinationChannelId,
-      });
-      const destName = destInfo.channel?.name ?? "unknown";
+      let destName = "unknown";
+      try {
+        const destInfo = await client.conversations.info({
+          channel: destinationChannelId,
+        });
+        destName = destInfo.channel?.name ?? "unknown";
+      } catch (error) {
+        logger.error("Failed to get destination channel info:", error);
+      }
 
       // Post close message in source channel
       await client.chat.postMessage({
