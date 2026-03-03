@@ -32,6 +32,7 @@ export function createMockClient() {
       add: vi.fn().mockResolvedValue({}),
       list: vi.fn().mockResolvedValue({ items: [] }),
     },
+    filesUploadV2: vi.fn().mockResolvedValue({}),
   };
 }
 
