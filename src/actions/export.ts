@@ -47,16 +47,34 @@ export function registerExportAction(app: App): void {
     let dmChannelId: string;
     try {
       const dm = await client.conversations.open({ users: userId });
-      dmChannelId = dm.channel?.id as string;
+      if (!dm.channel?.id) {
+        logger.error("Failed to open DM for export: channel ID is missing");
+        return;
+      }
+      dmChannelId = dm.channel.id;
     } catch (error) {
       logger.error("Failed to open DM for export:", error);
       return;
     }
 
-    // Verify the user is a member of the channel before exporting
+    // Verify the user is a member of the channel before exporting.
+    // conversations.members is paginated, so we must check all pages.
     try {
-      const members = await client.conversations.members({ channel: channelId });
-      if (!members.members?.includes(userId)) {
+      let isMember = false;
+      let cursor: string | undefined;
+      do {
+        const page = await client.conversations.members({
+          channel: channelId,
+          cursor,
+        });
+        if (page.members?.includes(userId)) {
+          isMember = true;
+          break;
+        }
+        cursor = page.response_metadata?.next_cursor || undefined;
+      } while (cursor);
+
+      if (!isMember) {
         await client.chat.postMessage({
           channel: dmChannelId,
           text: `You don't have access to #${channelName}.`,
