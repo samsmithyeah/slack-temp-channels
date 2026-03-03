@@ -10,8 +10,6 @@ import {
   LABEL_BROADCAST_CLOSE,
   LABEL_CREATE,
   LABEL_EXPORT,
-  LABEL_TAB_CLOSED,
-  LABEL_TAB_OPEN,
 } from "../constants";
 import { broadcastModal } from "../modals/broadcast";
 import { createChannelModal } from "../modals/create";
@@ -23,23 +21,20 @@ const CACHE_TTL_MS = 30_000;
 interface DashChannel {
   id: string;
   name: string;
-  isArchived: boolean;
 }
 
-interface PartitionedChannels {
-  open: { created: DashChannel[]; memberOf: DashChannel[] };
-  closed: { created: DashChannel[]; memberOf: DashChannel[] };
+interface DashChannelData {
+  created: DashChannel[];
+  memberOf: DashChannel[];
 }
 
 const dashChannelCache = new Map<
   string,
   {
-    data: PartitionedChannels;
+    data: DashChannelData;
     timestamp: number;
   }
 >();
-
-const viewTabState = new Map<string, "open" | "closed">();
 
 const botUserIdCache = new Map<string, Promise<string>>();
 
@@ -83,10 +78,9 @@ async function fetchDashChannels(
   client: WebClient,
   userId: string,
   teamId: string,
-): Promise<PartitionedChannels> {
+): Promise<DashChannelData> {
   const botUserId = await getBotUserId(client, teamId);
 
-  // Get dash channels the user is a member of directly (including archived)
   const userDashChannels: DashChannel[] = [];
   let cursor: string | undefined;
   do {
@@ -102,7 +96,6 @@ async function fetchDashChannels(
         userDashChannels.push({
           id: ch.id,
           name: ch.name,
-          isArchived: !!(ch as Record<string, unknown>).is_archived,
         });
       }
     }
@@ -110,10 +103,7 @@ async function fetchDashChannels(
   } while (cursor);
 
   if (userDashChannels.length === 0) {
-    return {
-      open: { created: [], memberOf: [] },
-      closed: { created: [], memberOf: [] },
-    };
+    return { created: [], memberOf: [] };
   }
 
   // Get pinned messages to identify creator in parallel
@@ -121,10 +111,7 @@ async function fetchDashChannels(
     userDashChannels.map((ch) => client.pins.list({ channel: ch.id })),
   );
 
-  const result: PartitionedChannels = {
-    open: { created: [], memberOf: [] },
-    closed: { created: [], memberOf: [] },
-  };
+  const result: DashChannelData = { created: [], memberOf: [] };
 
   for (let i = 0; i < userDashChannels.length; i++) {
     const ch = userDashChannels[i];
@@ -135,11 +122,10 @@ async function fetchDashChannels(
       isCreator = creatorId === userId;
     }
 
-    const bucket = ch.isArchived ? result.closed : result.open;
     if (isCreator) {
-      bucket.created.push(ch);
+      result.created.push(ch);
     } else {
-      bucket.memberOf.push(ch);
+      result.memberOf.push(ch);
     }
   }
 
@@ -223,38 +209,13 @@ function channelSectionBlocks(
   return blocks;
 }
 
-function tabToggleBlocks(activeTab: "open" | "closed"): KnownBlock[] {
-  return [
-    {
-      type: "actions",
-      elements: [
-        {
-          type: "button",
-          text: { type: "plain_text", text: LABEL_TAB_OPEN },
-          action_id: "home_tab_open",
-          ...(activeTab === "open" ? { style: "primary" } : {}),
-        },
-        {
-          type: "button",
-          text: { type: "plain_text", text: LABEL_TAB_CLOSED },
-          action_id: "home_tab_closed",
-          ...(activeTab === "closed" ? { style: "primary" } : {}),
-        },
-      ],
-    } as unknown as KnownBlock,
-  ];
-}
-
 async function publishHomeView(
   client: WebClient,
   userId: string,
   teamId: string,
   logger: Logger,
 ): Promise<void> {
-  let channelData: PartitionedChannels = {
-    open: { created: [], memberOf: [] },
-    closed: { created: [], memberOf: [] },
-  };
+  let channelData: DashChannelData = { created: [], memberOf: [] };
 
   try {
     const cacheKey = `${teamId}:${userId}`;
@@ -269,10 +230,6 @@ async function publishHomeView(
   } catch (error) {
     logger.error("Failed to fetch dash channels for home view:", error);
   }
-
-  const tabKey = `${teamId}:${userId}`;
-  const activeTab = viewTabState.get(tabKey) ?? "open";
-  const data = activeTab === "open" ? channelData.open : channelData.closed;
 
   const blocks: KnownBlock[] = [
     {
@@ -296,18 +253,17 @@ async function publishHomeView(
       ],
     },
     { type: "divider" },
-    ...tabToggleBlocks(activeTab),
     ...channelSectionBlocks(
       "Dash channels you created",
-      data.created,
+      channelData.created,
       "_You haven't created any dash channels yet._",
-      activeTab === "open",
+      true,
       true,
     ),
     { type: "divider" },
     ...channelSectionBlocks(
       "Other dash channels you're a member of",
-      data.memberOf,
+      channelData.memberOf,
       "_You're not a member of any other dash channels._",
       false,
       true,
@@ -324,7 +280,6 @@ async function publishHomeView(
 export function _clearCacheForTesting(): void {
   dashChannelCache.clear();
   botUserIdCache.clear();
-  viewTabState.clear();
 }
 
 export function registerHomeHandlers(app: App): void {
@@ -351,36 +306,6 @@ export function registerHomeHandlers(app: App): void {
       });
     } catch (error) {
       logger.error("Failed to open modal from home:", error);
-    }
-  });
-
-  app.action("home_tab_open", async ({ ack, body, client, logger }) => {
-    await ack();
-    const teamId = body.team?.id;
-    const userId = body.user.id;
-    if (!teamId) return;
-
-    viewTabState.set(`${teamId}:${userId}`, "open");
-    dashChannelCache.delete(`${teamId}:${userId}`);
-    try {
-      await publishHomeView(client, userId, teamId, logger);
-    } catch (error) {
-      logger.error("Failed to refresh home view after tab switch:", error);
-    }
-  });
-
-  app.action("home_tab_closed", async ({ ack, body, client, logger }) => {
-    await ack();
-    const teamId = body.team?.id;
-    const userId = body.user.id;
-    if (!teamId) return;
-
-    viewTabState.set(`${teamId}:${userId}`, "closed");
-    dashChannelCache.delete(`${teamId}:${userId}`);
-    try {
-      await publishHomeView(client, userId, teamId, logger);
-    } catch (error) {
-      logger.error("Failed to refresh home view after tab switch:", error);
     }
   });
 

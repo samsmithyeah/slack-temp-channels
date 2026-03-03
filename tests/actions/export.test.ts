@@ -3,6 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerExportAction } from "../../src/actions/export";
 import { createMockApp, createMockClient, createMockLogger } from "../helpers/mock-app";
 
+function setupExportClient(client: ReturnType<typeof createMockClient>, userId: string) {
+  // Default: user is a member of the channel (single page, no cursor)
+  client.conversations.members.mockResolvedValue({
+    members: [userId],
+    response_metadata: {},
+  });
+}
+
 describe("registerExportAction", () => {
   let app: ReturnType<typeof createMockApp>;
 
@@ -73,9 +81,198 @@ describe("registerExportAction", () => {
       expect(app.handlers["view:export_submit"]).toBeDefined();
     });
 
-    it("exports as plain text by default", async () => {
+    it("opens a DM conversation before uploading", async () => {
       const ack = vi.fn();
       const client = createMockClient();
+      setupExportClient(client, "U_REQUESTER");
+      client.conversations.history.mockResolvedValue({
+        messages: [{ user: "U1", text: "Hello", ts: "1700000000.000000" }],
+        response_metadata: {},
+      });
+      (client as unknown as Record<string, unknown>).users = {
+        ...client.users,
+        info: vi.fn().mockResolvedValue({
+          user: { profile: { display_name: "Alice" }, real_name: "Alice Smith" },
+        }),
+      };
+
+      await app.handlers["view:export_submit"]({
+        ack,
+        view: {
+          private_metadata: "C_CHAN:test-channel",
+          state: {
+            values: {
+              export_format: {
+                export_format_input: { selected_option: { value: "text" } },
+              },
+            },
+          },
+        },
+        body: { user: { id: "U_REQUESTER" } },
+        client,
+        logger: createMockLogger(),
+      });
+
+      expect(client.conversations.open).toHaveBeenCalledWith({ users: "U_REQUESTER" });
+    });
+
+    it("returns early when DM channel ID is missing", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+      const logger = createMockLogger();
+      client.conversations.open.mockResolvedValue({ channel: {} });
+
+      await app.handlers["view:export_submit"]({
+        ack,
+        view: {
+          private_metadata: "C_CHAN:test-channel",
+          state: {
+            values: {
+              export_format: {
+                export_format_input: { selected_option: { value: "text" } },
+              },
+            },
+          },
+        },
+        body: { user: { id: "U_REQUESTER" } },
+        client,
+        logger,
+      });
+
+      expect(logger.error).toHaveBeenCalledWith(
+        "Failed to open DM for export: channel ID is missing",
+      );
+      expect(client.conversations.members).not.toHaveBeenCalled();
+      expect(client.filesUploadV2).not.toHaveBeenCalled();
+    });
+
+    it("checks all pages of membership for large channels", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+      // First page doesn't include the user, second page does
+      client.conversations.members
+        .mockResolvedValueOnce({
+          members: ["U_OTHER1", "U_OTHER2"],
+          response_metadata: { next_cursor: "page2" },
+        })
+        .mockResolvedValueOnce({
+          members: ["U_REQUESTER"],
+          response_metadata: {},
+        });
+      client.conversations.history.mockResolvedValue({
+        messages: [{ user: "U1", text: "Hello", ts: "1700000000.000000" }],
+        response_metadata: {},
+      });
+      (client as unknown as Record<string, unknown>).users = {
+        ...client.users,
+        info: vi.fn().mockResolvedValue({
+          user: { profile: { display_name: "Alice" }, real_name: "Alice Smith" },
+        }),
+      };
+
+      await app.handlers["view:export_submit"]({
+        ack,
+        view: {
+          private_metadata: "C_CHAN:test-channel",
+          state: {
+            values: {
+              export_format: {
+                export_format_input: { selected_option: { value: "text" } },
+              },
+            },
+          },
+        },
+        body: { user: { id: "U_REQUESTER" } },
+        client,
+        logger: createMockLogger(),
+      });
+
+      expect(client.conversations.members).toHaveBeenCalledTimes(2);
+      expect(client.conversations.members).toHaveBeenCalledWith({
+        channel: "C_CHAN",
+        cursor: "page2",
+      });
+      expect(client.filesUploadV2).toHaveBeenCalled();
+    });
+
+    it("verifies user membership before exporting", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+      setupExportClient(client, "U_REQUESTER");
+      client.conversations.history.mockResolvedValue({
+        messages: [{ user: "U1", text: "Hello", ts: "1700000000.000000" }],
+        response_metadata: {},
+      });
+      (client as unknown as Record<string, unknown>).users = {
+        ...client.users,
+        info: vi.fn().mockResolvedValue({
+          user: { profile: { display_name: "Alice" } },
+        }),
+      };
+
+      await app.handlers["view:export_submit"]({
+        ack,
+        view: {
+          private_metadata: "C_CHAN:test-channel",
+          state: {
+            values: {
+              export_format: {
+                export_format_input: { selected_option: { value: "text" } },
+              },
+            },
+          },
+        },
+        body: { user: { id: "U_REQUESTER" } },
+        client,
+        logger: createMockLogger(),
+      });
+
+      expect(client.conversations.members).toHaveBeenCalledWith({
+        channel: "C_CHAN",
+        cursor: undefined,
+      });
+      expect(client.filesUploadV2).toHaveBeenCalled();
+    });
+
+    it("rejects export when user is not a member", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+      client.conversations.members.mockResolvedValue({
+        members: ["U_OTHER"],
+        response_metadata: {},
+      });
+
+      await app.handlers["view:export_submit"]({
+        ack,
+        view: {
+          private_metadata: "C_CHAN:secret-channel",
+          state: {
+            values: {
+              export_format: {
+                export_format_input: { selected_option: { value: "text" } },
+              },
+            },
+          },
+        },
+        body: { user: { id: "U_REQUESTER" } },
+        client,
+        logger: createMockLogger(),
+      });
+
+      expect(client.filesUploadV2).not.toHaveBeenCalled();
+      expect(client.conversations.history).not.toHaveBeenCalled();
+      expect(client.chat.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: "D_DM",
+          text: expect.stringContaining("don't have access"),
+        }),
+      );
+    });
+
+    it("exports as plain text using the DM channel ID", async () => {
+      const ack = vi.fn();
+      const client = createMockClient();
+      setupExportClient(client, "U_REQUESTER");
       client.conversations.history.mockResolvedValue({
         messages: [{ user: "U1", text: "Hello world", ts: "1700000000.000000" }],
         response_metadata: {},
@@ -107,7 +304,7 @@ describe("registerExportAction", () => {
       expect(ack).toHaveBeenCalled();
       expect(client.filesUploadV2).toHaveBeenCalledWith(
         expect.objectContaining({
-          channel_id: "U_REQUESTER",
+          channel_id: "D_DM",
           filename: "test-channel.txt",
           content: expect.stringContaining("Alice"),
         }),
@@ -117,6 +314,7 @@ describe("registerExportAction", () => {
     it("exports as JSON when json format selected", async () => {
       const ack = vi.fn();
       const client = createMockClient();
+      setupExportClient(client, "U_REQUESTER");
       client.conversations.history.mockResolvedValue({
         messages: [{ user: "U1", text: "Hello", ts: "1700000000.000000" }],
         response_metadata: {},
@@ -147,7 +345,7 @@ describe("registerExportAction", () => {
 
       expect(client.filesUploadV2).toHaveBeenCalledWith(
         expect.objectContaining({
-          channel_id: "U_REQUESTER",
+          channel_id: "D_DM",
           filename: "test-channel.json",
           content: expect.stringContaining('"channel"'),
         }),
@@ -157,6 +355,7 @@ describe("registerExportAction", () => {
     it("sends DM when channel has no messages", async () => {
       const ack = vi.fn();
       const client = createMockClient();
+      setupExportClient(client, "U_REQUESTER");
       client.conversations.history.mockResolvedValue({
         messages: [],
         response_metadata: {},
@@ -182,7 +381,7 @@ describe("registerExportAction", () => {
       expect(client.filesUploadV2).not.toHaveBeenCalled();
       expect(client.chat.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          channel: "U_REQUESTER",
+          channel: "D_DM",
           text: expect.stringContaining("No messages found"),
         }),
       );
@@ -192,6 +391,7 @@ describe("registerExportAction", () => {
       const ack = vi.fn();
       const client = createMockClient();
       const logger = createMockLogger();
+      setupExportClient(client, "U_REQUESTER");
       client.conversations.history.mockRejectedValue(new Error("API failure"));
 
       await app.handlers["view:export_submit"]({
@@ -217,7 +417,7 @@ describe("registerExportAction", () => {
       );
       expect(client.chat.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          channel: "U_REQUESTER",
+          channel: "D_DM",
           text: expect.stringContaining("couldn't export"),
         }),
       );

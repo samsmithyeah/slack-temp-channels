@@ -28,7 +28,7 @@ function getPublishedBlocks(client: ReturnType<typeof createMockClient>) {
 // Helper to set up channels with creator pins
 function setupChannels(
   client: ReturnType<typeof createMockClient>,
-  channels: Array<{ id: string; name: string; is_archived?: boolean }>,
+  channels: Array<{ id: string; name: string }>,
   creatorMap: Record<string, string>, // channelId -> creatorUserId
 ) {
   client.users.conversations.mockResolvedValue({
@@ -95,46 +95,6 @@ describe("registerHomeHandlers", () => {
           b.type === "actions" && b.elements?.some((el) => el.action_id === "home_create_dash"),
       );
       expect(actionsBlock).toBeDefined();
-    });
-
-    it("includes tab toggle buttons (Open and Closed)", async () => {
-      const client = createMockClient();
-
-      await app.handlers["event:app_home_opened"]({
-        event: { user: "U_VISITOR" },
-        context: { teamId: "T_TEAM" },
-        client,
-        logger: createMockLogger(),
-      });
-
-      const blocks = getPublishedBlocks(client);
-      const tabBlock = blocks.find(
-        (b) => b.type === "actions" && b.elements?.some((el) => el.action_id === "home_tab_open"),
-      );
-      expect(tabBlock).toBeDefined();
-      const tabIds = tabBlock!.elements!.map((el) => el.action_id);
-      expect(tabIds).toContain("home_tab_open");
-      expect(tabIds).toContain("home_tab_closed");
-    });
-
-    it("highlights Open tab by default", async () => {
-      const client = createMockClient();
-
-      await app.handlers["event:app_home_opened"]({
-        event: { user: "U_VISITOR" },
-        context: { teamId: "T_TEAM" },
-        client,
-        logger: createMockLogger(),
-      });
-
-      const blocks = getPublishedBlocks(client);
-      const tabBlock = blocks.find(
-        (b) => b.type === "actions" && b.elements?.some((el) => el.action_id === "home_tab_open"),
-      );
-      const openBtn = tabBlock!.elements!.find((el) => el.action_id === "home_tab_open");
-      const closedBtn = tabBlock!.elements!.find((el) => el.action_id === "home_tab_closed");
-      expect(openBtn!.style).toBe("primary");
-      expect(closedBtn!.style).toBeUndefined();
     });
 
     it("shows channels the user created in the 'Channels you created' section", async () => {
@@ -431,7 +391,6 @@ describe("registerHomeHandlers", () => {
         logger: createMockLogger(),
       });
 
-      // Should have called users.conversations twice (once per page)
       expect(client.users.conversations).toHaveBeenCalledTimes(2);
       expect(client.users.conversations).toHaveBeenCalledWith(
         expect.objectContaining({ cursor: "cursor_abc" }),
@@ -446,7 +405,7 @@ describe("registerHomeHandlers", () => {
       expect(channelMentions).toContain("<#C_PAGE2>");
     });
 
-    it("fetches archived channels with exclude_archived: false", async () => {
+    it("fetches channels with exclude_archived: false", async () => {
       const client = createMockClient();
 
       await app.handlers["event:app_home_opened"]({
@@ -675,146 +634,6 @@ describe("registerHomeHandlers", () => {
       expect(ack).toHaveBeenCalled();
       expect(logger.error).toHaveBeenCalledWith("Missing teamId in home_close action");
       expect(client.conversations.archive).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("tab toggle actions", () => {
-    it("registers home_tab_open and home_tab_closed action handlers", () => {
-      expect(app.handlers["action:home_tab_open"]).toBeDefined();
-      expect(app.handlers["action:home_tab_closed"]).toBeDefined();
-    });
-
-    it("switches to Closed tab and shows archived channels", async () => {
-      const client = createMockClient();
-      client.users.conversations.mockResolvedValue({
-        channels: [
-          { id: "C_OPEN", name: "-open-ch", is_archived: false },
-          { id: "C_CLOSED", name: "-closed-ch", is_archived: true },
-        ],
-        response_metadata: {},
-      });
-      client.pins.list
-        .mockResolvedValueOnce({
-          items: [{ message: { user: "U_BOT", text: `<@U_USER> ${CREATOR_MSG_TEXT}` } }],
-        })
-        .mockResolvedValueOnce({
-          items: [{ message: { user: "U_BOT", text: `<@U_USER> ${CREATOR_MSG_TEXT}` } }],
-        });
-
-      const ack = vi.fn();
-      await app.handlers["action:home_tab_closed"]({
-        ack,
-        body: { team: { id: "T_TEAM" }, user: { id: "U_USER" } },
-        client,
-        logger: createMockLogger(),
-      });
-
-      expect(ack).toHaveBeenCalled();
-      expect(client.views.publish).toHaveBeenCalled();
-
-      const blocks = getPublishedBlocks(client);
-
-      // Should show only the archived channel
-      const channelMentions = blocks
-        .filter((b) => b.type === "section" && b.text?.text?.startsWith("<#"))
-        .map((b) => b.text!.text);
-      expect(channelMentions).toContain("<#C_CLOSED>");
-      expect(channelMentions).not.toContain("<#C_OPEN>");
-
-      // Closed tab should be highlighted
-      const tabBlock = blocks.find(
-        (b) => b.type === "actions" && b.elements?.some((el) => el.action_id === "home_tab_closed"),
-      );
-      const closedBtn = tabBlock!.elements!.find((el) => el.action_id === "home_tab_closed");
-      expect(closedBtn!.style).toBe("primary");
-    });
-
-    it("switches back to Open tab", async () => {
-      const client = createMockClient();
-      client.users.conversations.mockResolvedValue({
-        channels: [
-          { id: "C_OPEN", name: "-open-ch", is_archived: false },
-          { id: "C_CLOSED", name: "-closed-ch", is_archived: true },
-        ],
-        response_metadata: {},
-      });
-      client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `<@U_USER> ${CREATOR_MSG_TEXT}` } }],
-      });
-
-      // First switch to closed tab
-      const ack = vi.fn();
-      await app.handlers["action:home_tab_closed"]({
-        ack,
-        body: { team: { id: "T_TEAM" }, user: { id: "U_USER" } },
-        client,
-        logger: createMockLogger(),
-      });
-
-      // Now switch back to open
-      _clearCacheForTesting();
-      client.views.publish.mockClear();
-      client.users.conversations.mockResolvedValue({
-        channels: [
-          { id: "C_OPEN", name: "-open-ch", is_archived: false },
-          { id: "C_CLOSED", name: "-closed-ch", is_archived: true },
-        ],
-        response_metadata: {},
-      });
-      client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `<@U_USER> ${CREATOR_MSG_TEXT}` } }],
-      });
-
-      // Re-register after clearing cache (tab state was cleared)
-      app = createMockApp();
-      registerHomeHandlers(app as unknown as App);
-
-      await app.handlers["action:home_tab_open"]({
-        ack,
-        body: { team: { id: "T_TEAM" }, user: { id: "U_USER" } },
-        client,
-        logger: createMockLogger(),
-      });
-
-      const blocks = getPublishedBlocks(client);
-      const channelMentions = blocks
-        .filter((b) => b.type === "section" && b.text?.text?.startsWith("<#"))
-        .map((b) => b.text!.text);
-      expect(channelMentions).toContain("<#C_OPEN>");
-      expect(channelMentions).not.toContain("<#C_CLOSED>");
-    });
-
-    it("does not show Broadcast & Close or Close buttons for closed channels", async () => {
-      const client = createMockClient();
-      client.users.conversations.mockResolvedValue({
-        channels: [{ id: "C_CLOSED", name: "-archived-ch", is_archived: true }],
-        response_metadata: {},
-      });
-      client.pins.list.mockResolvedValue({
-        items: [{ message: { user: "U_BOT", text: `<@U_USER> ${CREATOR_MSG_TEXT}` } }],
-      });
-
-      const ack = vi.fn();
-      await app.handlers["action:home_tab_closed"]({
-        ack,
-        body: { team: { id: "T_TEAM" }, user: { id: "U_USER" } },
-        client,
-        logger: createMockLogger(),
-      });
-
-      const blocks = getPublishedBlocks(client);
-
-      // Find the channel actions block
-      const sectionIdx = blocks.findIndex(
-        (b) => b.type === "section" && b.text?.text === "<#C_CLOSED>",
-      );
-      const actionsBlock = blocks[sectionIdx + 1];
-      expect(actionsBlock.type).toBe("actions");
-
-      // Should only have Export button, no close/broadcast buttons
-      const actionIds = actionsBlock.elements!.map((el) => el.action_id);
-      expect(actionIds).toHaveLength(1);
-      expect(actionIds[0]).toMatch(/^home_export_/);
     });
   });
 });

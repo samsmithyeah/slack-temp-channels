@@ -8,8 +8,6 @@ export const LABEL_CREATE = "Create a dash channel";
 export const LABEL_CLOSE = "Close channel";
 export const LABEL_BROADCAST_CLOSE = "Broadcast & close";
 export const LABEL_EXPORT = "Export";
-export const LABEL_TAB_OPEN = "Open";
-export const LABEL_TAB_CLOSED = "Closed";
 
 // App Home
 export const APP_HOME_HEADING = "Dash: Temporary channels";

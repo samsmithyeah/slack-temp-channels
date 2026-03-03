@@ -36,7 +36,8 @@
         "commands",
         "users:read",
         "groups:read",
-        "files:write"
+        "files:write",
+        "im:write"
       ]
     }
   },

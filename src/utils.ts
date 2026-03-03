@@ -1,4 +1,5 @@
 import type { KnownBlock } from "@slack/types";
+import type { WebClient } from "@slack/web-api";
 import { CREATOR_MSG_TEXT, LABEL_BROADCAST_CLOSE, LABEL_CLOSE } from "./constants";
 
 export function getSlackErrorCode(error: unknown): string | undefined {
@@ -7,6 +8,23 @@ export function getSlackErrorCode(error: unknown): string | undefined {
   if (typeof err.data !== "object" || err.data === null) return undefined;
   const data = err.data as Record<string, unknown>;
   return typeof data.error === "string" ? data.error : undefined;
+}
+
+export async function isChannelMember(
+  client: WebClient,
+  channelId: string,
+  userId: string,
+): Promise<boolean> {
+  let cursor: string | undefined;
+  do {
+    const page = await client.conversations.members({
+      channel: channelId,
+      cursor,
+    });
+    if (page.members?.includes(userId)) return true;
+    cursor = page.response_metadata?.next_cursor || undefined;
+  } while (cursor);
+  return false;
 }
 
 export function parseUserIds(text: string): string[] {
