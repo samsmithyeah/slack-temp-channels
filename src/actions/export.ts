@@ -9,6 +9,7 @@ import {
   resolveUserNames,
 } from "../services/channelHistory";
 import type { ActionBody } from "../types";
+import { isChannelMember } from "../utils";
 
 export function registerExportAction(app: App): void {
   app.action(/^home_export_/, async ({ ack, body, client, logger }) => {
@@ -57,24 +58,9 @@ export function registerExportAction(app: App): void {
       return;
     }
 
-    // Verify the user is a member of the channel before exporting.
-    // conversations.members is paginated, so we must check all pages.
+    // Verify the user is a member of the channel before exporting
     try {
-      let isMember = false;
-      let cursor: string | undefined;
-      do {
-        const page = await client.conversations.members({
-          channel: channelId,
-          cursor,
-        });
-        if (page.members?.includes(userId)) {
-          isMember = true;
-          break;
-        }
-        cursor = page.response_metadata?.next_cursor || undefined;
-      } while (cursor);
-
-      if (!isMember) {
+      if (!(await isChannelMember(client, channelId, userId))) {
         await client.chat.postMessage({
           channel: dmChannelId,
           text: `You don't have access to #${channelName}.`,

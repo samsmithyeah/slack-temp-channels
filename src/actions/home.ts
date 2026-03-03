@@ -10,8 +10,6 @@ import {
   LABEL_BROADCAST_CLOSE,
   LABEL_CREATE,
   LABEL_EXPORT,
-  LABEL_TAB_CLOSED,
-  LABEL_TAB_OPEN,
 } from "../constants";
 import { broadcastModal } from "../modals/broadcast";
 import { createChannelModal } from "../modals/create";
@@ -23,23 +21,20 @@ const CACHE_TTL_MS = 30_000;
 interface DashChannel {
   id: string;
   name: string;
-  isArchived: boolean;
 }
 
-interface PartitionedChannels {
-  open: { created: DashChannel[]; memberOf: DashChannel[] };
-  closed: { created: DashChannel[]; memberOf: DashChannel[] };
+interface DashChannelData {
+  created: DashChannel[];
+  memberOf: DashChannel[];
 }
 
 const dashChannelCache = new Map<
   string,
   {
-    data: PartitionedChannels;
+    data: DashChannelData;
     timestamp: number;
   }
 >();
-
-const viewTabState = new Map<string, "open" | "closed">();
 
 const botUserIdCache = new Map<string, Promise<string>>();
 
@@ -83,14 +78,10 @@ async function fetchDashChannels(
   client: WebClient,
   userId: string,
   teamId: string,
-): Promise<PartitionedChannels> {
+): Promise<DashChannelData> {
   const botUserId = await getBotUserId(client, teamId);
 
-  // Get open dash channels the user is a member of.
-  // Note: users.conversations with a user param may not return archived
-  // channels even with exclude_archived:false, so we handle those separately.
   const userDashChannels: DashChannel[] = [];
-  const userChannelIds = new Set<string>();
   let cursor: string | undefined;
   do {
     const result = await client.users.conversations({
@@ -102,74 +93,17 @@ async function fetchDashChannels(
     });
     for (const ch of result.channels ?? []) {
       if (ch.id && ch.name?.startsWith(CHANNEL_PREFIX)) {
-        userChannelIds.add(ch.id);
         userDashChannels.push({
           id: ch.id,
           name: ch.name,
-          isArchived: !!ch.is_archived,
         });
       }
     }
     cursor = result.response_metadata?.next_cursor || undefined;
   } while (cursor);
 
-  // Find archived dash channels via the bot's own channel list, since
-  // the bot is a member of every dash channel it created.
-  const archivedCandidates: { id: string; name: string }[] = [];
-  let botCursor: string | undefined;
-  do {
-    const result = await client.users.conversations({
-      types: "public_channel",
-      exclude_archived: false,
-      limit: 200,
-      cursor: botCursor,
-    });
-    for (const ch of result.channels ?? []) {
-      if (
-        ch.id &&
-        ch.name?.startsWith(CHANNEL_PREFIX) &&
-        ch.is_archived &&
-        !userChannelIds.has(ch.id)
-      ) {
-        archivedCandidates.push({ id: ch.id, name: ch.name });
-      }
-    }
-    botCursor = result.response_metadata?.next_cursor || undefined;
-  } while (botCursor);
-
-  // Check user membership for each archived candidate
-  if (archivedCandidates.length > 0) {
-    const memberChecks = await Promise.allSettled(
-      archivedCandidates.map(async (ch) => {
-        let memberCursor: string | undefined;
-        do {
-          const page = await client.conversations.members({
-            channel: ch.id,
-            cursor: memberCursor,
-          });
-          if (page.members?.includes(userId)) return true;
-          memberCursor = page.response_metadata?.next_cursor || undefined;
-        } while (memberCursor);
-        return false;
-      }),
-    );
-    for (let i = 0; i < archivedCandidates.length; i++) {
-      const check = memberChecks[i];
-      if (check.status === "fulfilled" && check.value) {
-        userDashChannels.push({
-          id: archivedCandidates[i].id,
-          name: archivedCandidates[i].name,
-          isArchived: true,
-        });
-      }
-    }
-  }
-
   if (userDashChannels.length === 0) {
-    return {
-      open: { created: [], memberOf: [] },
-      closed: { created: [], memberOf: [] },
-    };
+    return { created: [], memberOf: [] };
   }
 
   // Get pinned messages to identify creator in parallel
@@ -177,10 +111,7 @@ async function fetchDashChannels(
     userDashChannels.map((ch) => client.pins.list({ channel: ch.id })),
   );
 
-  const result: PartitionedChannels = {
-    open: { created: [], memberOf: [] },
-    closed: { created: [], memberOf: [] },
-  };
+  const result: DashChannelData = { created: [], memberOf: [] };
 
   for (let i = 0; i < userDashChannels.length; i++) {
     const ch = userDashChannels[i];
@@ -191,11 +122,10 @@ async function fetchDashChannels(
       isCreator = creatorId === userId;
     }
 
-    const bucket = ch.isArchived ? result.closed : result.open;
     if (isCreator) {
-      bucket.created.push(ch);
+      result.created.push(ch);
     } else {
-      bucket.memberOf.push(ch);
+      result.memberOf.push(ch);
     }
   }
 
@@ -279,38 +209,13 @@ function channelSectionBlocks(
   return blocks;
 }
 
-function tabToggleBlocks(activeTab: "open" | "closed"): KnownBlock[] {
-  return [
-    {
-      type: "actions",
-      elements: [
-        {
-          type: "button",
-          text: { type: "plain_text", text: LABEL_TAB_OPEN },
-          action_id: "home_tab_open",
-          ...(activeTab === "open" ? { style: "primary" } : {}),
-        },
-        {
-          type: "button",
-          text: { type: "plain_text", text: LABEL_TAB_CLOSED },
-          action_id: "home_tab_closed",
-          ...(activeTab === "closed" ? { style: "primary" } : {}),
-        },
-      ],
-    } as unknown as KnownBlock,
-  ];
-}
-
 async function publishHomeView(
   client: WebClient,
   userId: string,
   teamId: string,
   logger: Logger,
 ): Promise<void> {
-  let channelData: PartitionedChannels = {
-    open: { created: [], memberOf: [] },
-    closed: { created: [], memberOf: [] },
-  };
+  let channelData: DashChannelData = { created: [], memberOf: [] };
 
   try {
     const cacheKey = `${teamId}:${userId}`;
@@ -325,10 +230,6 @@ async function publishHomeView(
   } catch (error) {
     logger.error("Failed to fetch dash channels for home view:", error);
   }
-
-  const tabKey = `${teamId}:${userId}`;
-  const activeTab = viewTabState.get(tabKey) ?? "open";
-  const data = activeTab === "open" ? channelData.open : channelData.closed;
 
   const blocks: KnownBlock[] = [
     {
@@ -352,18 +253,17 @@ async function publishHomeView(
       ],
     },
     { type: "divider" },
-    ...tabToggleBlocks(activeTab),
     ...channelSectionBlocks(
       "Dash channels you created",
-      data.created,
+      channelData.created,
       "_You haven't created any dash channels yet._",
-      activeTab === "open",
+      true,
       true,
     ),
     { type: "divider" },
     ...channelSectionBlocks(
       "Other dash channels you're a member of",
-      data.memberOf,
+      channelData.memberOf,
       "_You're not a member of any other dash channels._",
       false,
       true,
@@ -380,7 +280,6 @@ async function publishHomeView(
 export function _clearCacheForTesting(): void {
   dashChannelCache.clear();
   botUserIdCache.clear();
-  viewTabState.clear();
 }
 
 export function registerHomeHandlers(app: App): void {
@@ -409,28 +308,6 @@ export function registerHomeHandlers(app: App): void {
       logger.error("Failed to open modal from home:", error);
     }
   });
-
-  async function handleTabSwitch(
-    tab: "open" | "closed",
-    { ack, body, client, logger }: Parameters<Parameters<typeof app.action>[1]>[0],
-  ) {
-    await ack();
-    const teamId = body.team?.id;
-    const userId = body.user.id;
-    if (!teamId) return;
-
-    const key = `${teamId}:${userId}`;
-    viewTabState.set(key, tab);
-    dashChannelCache.delete(key);
-    try {
-      await publishHomeView(client, userId, teamId, logger);
-    } catch (error) {
-      logger.error("Failed to refresh home view after tab switch:", error);
-    }
-  }
-
-  app.action("home_tab_open", (args) => handleTabSwitch("open", args));
-  app.action("home_tab_closed", (args) => handleTabSwitch("closed", args));
 
   app.action(/^home_broadcast_close_/, async ({ ack, body, client, logger }) => {
     await ack();

@@ -1,6 +1,12 @@
 import type { ActionsBlock, SectionBlock } from "@slack/types";
-import { describe, expect, it } from "vitest";
-import { getSlackErrorCode, parseUserIds, slugify, welcomeBlocks } from "../src/utils";
+import { describe, expect, it, vi } from "vitest";
+import {
+  getSlackErrorCode,
+  isChannelMember,
+  parseUserIds,
+  slugify,
+  welcomeBlocks,
+} from "../src/utils";
 
 describe("getSlackErrorCode", () => {
   it("extracts error code from Slack API error shape", () => {
@@ -173,5 +179,47 @@ describe("welcomeBlocks", () => {
     );
     expect(broadcastBtn).toBeDefined();
     expect("value" in broadcastBtn!).toBe(false);
+  });
+});
+
+describe("isChannelMember", () => {
+  function mockClient(pages: { members: string[]; next_cursor?: string }[]) {
+    const fn = vi.fn();
+    for (const page of pages) {
+      fn.mockResolvedValueOnce({
+        members: page.members,
+        response_metadata: { next_cursor: page.next_cursor },
+      });
+    }
+    return { conversations: { members: fn } } as unknown as Parameters<
+      typeof isChannelMember
+    >[0] & { conversations: { members: ReturnType<typeof vi.fn> } };
+  }
+
+  it("returns true when user is in the first page", async () => {
+    const client = mockClient([{ members: ["U1", "U2", "U3"] }]);
+    expect(await isChannelMember(client, "C1", "U2")).toBe(true);
+  });
+
+  it("returns false when user is not in any page", async () => {
+    const client = mockClient([{ members: ["U1", "U2"] }]);
+    expect(await isChannelMember(client, "C1", "U_MISSING")).toBe(false);
+  });
+
+  it("paginates to find user on a later page", async () => {
+    const client = mockClient([
+      { members: ["U1", "U2"], next_cursor: "page2" },
+      { members: ["U3", "U4"] },
+    ]);
+    expect(await isChannelMember(client, "C1", "U4")).toBe(true);
+  });
+
+  it("stops paginating once user is found", async () => {
+    const client = mockClient([
+      { members: ["U_TARGET"], next_cursor: "page2" },
+      { members: ["U_OTHER"] },
+    ]);
+    await isChannelMember(client, "C1", "U_TARGET");
+    expect(client.conversations.members).toHaveBeenCalledTimes(1);
   });
 });
