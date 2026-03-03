@@ -1,7 +1,7 @@
 import type { App } from "@slack/bolt";
 import {
   CHANNEL_PREFIX,
-  CHANNEL_TOPIC,
+  CHANNEL_PURPOSE,
   CREATOR_MSG_TEXT,
   ERR_CHANNEL_SETUP,
   ORIGIN_MSG_TEXT,
@@ -80,20 +80,49 @@ export function registerDashCommand(app: App): void {
 
     try {
       // Set purpose and topic
-      const setPurpose = purpose
-        ? client.conversations.setPurpose({ channel: channelId, purpose })
+      const setTopic = purpose
+        ? client.conversations.setTopic({ channel: channelId, topic: purpose })
         : Promise.resolve();
-      const setTopic = client.conversations.setTopic({
+      const setPurpose = client.conversations.setPurpose({
         channel: channelId,
-        topic: CHANNEL_TOPIC,
+        purpose: CHANNEL_PURPOSE,
       });
-      await Promise.all([setPurpose, setTopic]);
+      await Promise.all([setTopic, setPurpose]);
 
-      // Invite users (bot is auto-joined as creator)
-      if (userIds.length > 0) {
-        await client.conversations.invite({
+      // Invite users individually so one failure doesn't block the rest
+      const failedUserIds: string[] = [];
+      for (const userId of userIds) {
+        try {
+          await client.conversations.invite({
+            channel: channelId,
+            users: userId,
+          });
+        } catch (error) {
+          const code = getSlackErrorCode(error);
+          if (code === "already_in_channel") continue;
+          if (code === "user_team_not_in_channel") {
+            // External user — send a Slack Connect invitation
+            try {
+              await client.conversations.inviteShared({
+                channel: channelId,
+                user_ids: [userId],
+              });
+            } catch (shareError) {
+              logger.error(`Failed to send Slack Connect invite to ${userId}:`, shareError);
+              failedUserIds.push(userId);
+            }
+          } else {
+            logger.error(`Failed to invite ${userId} (${code}):`, error);
+            failedUserIds.push(userId);
+          }
+        }
+      }
+
+      if (failedUserIds.length > 0) {
+        const mentions = failedUserIds.map((id) => `<@${id}>`).join(", ");
+        await client.chat.postMessage({
           channel: channelId,
-          users: userIds.join(","),
+          text: `Some users couldn't be invited and may need to be added manually: ${mentions}`,
         });
       }
 

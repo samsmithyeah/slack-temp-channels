@@ -1,6 +1,6 @@
 // Channel settings
 export const CHANNEL_PREFIX = "-";
-export const CHANNEL_TOPIC =
+export const CHANNEL_PURPOSE =
   "Temporary channel created by the Dash app. Use the buttons in the pinned message to close.";
 
 // Labels
