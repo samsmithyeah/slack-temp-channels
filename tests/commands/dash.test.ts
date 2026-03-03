@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerDashCommand } from "../../src/commands/dash";
 import {
   CHANNEL_PREFIX,
-  CHANNEL_TOPIC,
+  CHANNEL_PURPOSE,
   ERR_CHANNEL_SETUP,
   ORIGIN_MSG_TEXT,
 } from "../../src/constants";
@@ -159,8 +159,10 @@ describe("registerDashCommand", () => {
       const payload = makeViewPayload();
       await app.handlers["view:create_channel"](payload);
 
-      const inviteCall = payload.client.conversations.invite.mock.calls[0][0] as { users: string };
-      expect(inviteCall.users).toContain("UCREATOR");
+      const invitedUsers = payload.client.conversations.invite.mock.calls.map(
+        (c: { users: string }[]) => c[0].users,
+      );
+      expect(invitedUsers).toContain("UCREATOR");
     });
 
     it("does not duplicate creator in invite list", async () => {
@@ -177,23 +179,24 @@ describe("registerDashCommand", () => {
       });
       await app.handlers["view:create_channel"](payload);
 
-      const inviteCall = payload.client.conversations.invite.mock.calls[0][0] as { users: string };
-      const ids = inviteCall.users.split(",");
-      const creatorCount = ids.filter((id: string) => id === "UCREATOR").length;
+      const invitedUsers = payload.client.conversations.invite.mock.calls.map(
+        (c: { users: string }[]) => c[0].users,
+      );
+      const creatorCount = invitedUsers.filter((id: string) => id === "UCREATOR").length;
       expect(creatorCount).toBe(1);
     });
 
-    it("sets topic on the channel", async () => {
+    it("sets purpose on the channel", async () => {
       const payload = makeViewPayload();
       await app.handlers["view:create_channel"](payload);
 
-      expect(payload.client.conversations.setTopic).toHaveBeenCalledWith({
+      expect(payload.client.conversations.setPurpose).toHaveBeenCalledWith({
         channel: "C_NEW",
-        topic: CHANNEL_TOPIC,
+        purpose: CHANNEL_PURPOSE,
       });
     });
 
-    it("sets purpose when provided", async () => {
+    it("sets topic when provided", async () => {
       const payload = makeViewPayload({
         view: {
           state: {
@@ -207,9 +210,9 @@ describe("registerDashCommand", () => {
       });
       await app.handlers["view:create_channel"](payload);
 
-      expect(payload.client.conversations.setPurpose).toHaveBeenCalledWith({
+      expect(payload.client.conversations.setTopic).toHaveBeenCalledWith({
         channel: "C_NEW",
-        purpose: "Ship it",
+        topic: "Ship it",
       });
     });
 

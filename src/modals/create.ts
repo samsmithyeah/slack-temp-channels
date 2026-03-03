@@ -38,7 +38,7 @@ export function createChannelModal(preselectedUserIds?: string[], originChannelI
       {
         type: "input",
         block_id: "purpose",
-        label: { type: "plain_text", text: "Purpose" },
+        label: { type: "plain_text", text: "Topic" },
         optional: true,
         element: {
           type: "plain_text_input",
