@@ -102,7 +102,7 @@ async function fetchDashChannels(
         userDashChannels.push({
           id: ch.id,
           name: ch.name,
-          isArchived: !!(ch as Record<string, unknown>).is_archived,
+          isArchived: !!ch.is_archived,
         });
       }
     }
@@ -354,35 +354,27 @@ export function registerHomeHandlers(app: App): void {
     }
   });
 
-  app.action("home_tab_open", async ({ ack, body, client, logger }) => {
+  async function handleTabSwitch(
+    tab: "open" | "closed",
+    { ack, body, client, logger }: Parameters<Parameters<typeof app.action>[1]>[0],
+  ) {
     await ack();
     const teamId = body.team?.id;
     const userId = body.user.id;
     if (!teamId) return;
 
-    viewTabState.set(`${teamId}:${userId}`, "open");
-    dashChannelCache.delete(`${teamId}:${userId}`);
+    const key = `${teamId}:${userId}`;
+    viewTabState.set(key, tab);
+    dashChannelCache.delete(key);
     try {
       await publishHomeView(client, userId, teamId, logger);
     } catch (error) {
       logger.error("Failed to refresh home view after tab switch:", error);
     }
-  });
+  }
 
-  app.action("home_tab_closed", async ({ ack, body, client, logger }) => {
-    await ack();
-    const teamId = body.team?.id;
-    const userId = body.user.id;
-    if (!teamId) return;
-
-    viewTabState.set(`${teamId}:${userId}`, "closed");
-    dashChannelCache.delete(`${teamId}:${userId}`);
-    try {
-      await publishHomeView(client, userId, teamId, logger);
-    } catch (error) {
-      logger.error("Failed to refresh home view after tab switch:", error);
-    }
-  });
+  app.action("home_tab_open", (args) => handleTabSwitch("open", args));
+  app.action("home_tab_closed", (args) => handleTabSwitch("closed", args));
 
   app.action(/^home_broadcast_close_/, async ({ ack, body, client, logger }) => {
     await ack();

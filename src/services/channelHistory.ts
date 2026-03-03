@@ -1,6 +1,7 @@
 import type { WebClient } from "@slack/web-api";
 
 const DEFAULT_MAX_PAGES = 3;
+export const EXPORT_MAX_PAGES = 100;
 const MESSAGES_PER_PAGE = 100;
 
 export interface RawMessage {
@@ -60,6 +61,10 @@ export async function resolveUserNames(
   return names;
 }
 
+function isUserMessage(msg: RawMessage): boolean {
+  return msg.subtype !== "channel_join" && msg.subtype !== "channel_leave";
+}
+
 function formatTimestamp(ts: string): string {
   const date = new Date(Number(ts) * 1000);
   return date
@@ -76,7 +81,7 @@ export function formatTranscript(
   const lines: string[] = [`# ${channelName}`, ""];
 
   for (const msg of messages) {
-    if (msg.subtype === "channel_join" || msg.subtype === "channel_leave") continue;
+    if (!isUserMessage(msg)) continue;
     const name = msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown";
     const time = msg.ts ? formatTimestamp(msg.ts) : "";
     lines.push(`[${time}] ${name}: ${msg.text ?? ""}`);
@@ -91,9 +96,7 @@ export function formatTranscriptJson(
   messages: RawMessage[],
   userNames: Map<string, string>,
 ): string {
-  const filtered = messages.filter(
-    (msg) => msg.subtype !== "channel_join" && msg.subtype !== "channel_leave",
-  );
+  const filtered = messages.filter(isUserMessage);
 
   const data = {
     channel: { id: channelId, name: channelName },
