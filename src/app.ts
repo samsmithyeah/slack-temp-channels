@@ -2,6 +2,7 @@ import "dotenv/config";
 import { App } from "@slack/bolt";
 import { registerBroadcastAction } from "./actions/broadcast";
 import { registerCloseAction } from "./actions/close";
+import { registerExportAction } from "./actions/export";
 import { registerHomeHandlers } from "./actions/home";
 import { registerDashCommand } from "./commands/dash";
 
@@ -16,6 +17,7 @@ const app = new App({
 registerDashCommand(app);
 registerCloseAction(app);
 registerBroadcastAction(app);
+registerExportAction(app);
 registerHomeHandlers(app);
 
 (async () => {

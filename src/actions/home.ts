@@ -9,6 +9,9 @@ import {
   ERR_ARCHIVE_PERMISSION,
   LABEL_BROADCAST_CLOSE,
   LABEL_CREATE,
+  LABEL_EXPORT,
+  LABEL_TAB_CLOSED,
+  LABEL_TAB_OPEN,
 } from "../constants";
 import { broadcastModal } from "../modals/broadcast";
 import { createChannelModal } from "../modals/create";
@@ -16,13 +19,27 @@ import type { ActionBody } from "../types";
 import { getSlackErrorCode } from "../utils";
 
 const CACHE_TTL_MS = 30_000;
+
+interface DashChannel {
+  id: string;
+  name: string;
+  isArchived: boolean;
+}
+
+interface PartitionedChannels {
+  open: { created: DashChannel[]; memberOf: DashChannel[] };
+  closed: { created: DashChannel[]; memberOf: DashChannel[] };
+}
+
 const dashChannelCache = new Map<
   string,
   {
-    data: { created: DashChannel[]; memberOf: DashChannel[] };
+    data: PartitionedChannels;
     timestamp: number;
   }
 >();
+
+const viewTabState = new Map<string, "open" | "closed">();
 
 const botUserIdCache = new Map<string, Promise<string>>();
 
@@ -31,11 +48,6 @@ const botUserIdCache = new Map<string, Promise<string>>();
 //   legacy:  "Temporary channel created by <@U123>"
 const CREATOR_REGEX_CURRENT = new RegExp(String.raw`<@(\w+)> ${CREATOR_MSG_TEXT}`);
 const CREATOR_REGEX_LEGACY = /Temporary channel created by <@(\w+)>/;
-
-interface DashChannel {
-  id: string;
-  name: string;
-}
 
 interface PinItem {
   message?: { text?: string; user?: string };
@@ -71,37 +83,48 @@ async function fetchDashChannels(
   client: WebClient,
   userId: string,
   teamId: string,
-): Promise<{ created: DashChannel[]; memberOf: DashChannel[] }> {
+): Promise<PartitionedChannels> {
   const botUserId = await getBotUserId(client, teamId);
 
-  // Get dash channels the user is a member of directly
+  // Get dash channels the user is a member of directly (including archived)
   const userDashChannels: DashChannel[] = [];
   let cursor: string | undefined;
   do {
     const result = await client.users.conversations({
       user: userId,
       types: "public_channel",
-      exclude_archived: true,
+      exclude_archived: false,
       limit: 200,
       cursor,
     });
     for (const ch of result.channels ?? []) {
       if (ch.id && ch.name?.startsWith(CHANNEL_PREFIX)) {
-        userDashChannels.push({ id: ch.id, name: ch.name });
+        userDashChannels.push({
+          id: ch.id,
+          name: ch.name,
+          isArchived: !!(ch as Record<string, unknown>).is_archived,
+        });
       }
     }
     cursor = result.response_metadata?.next_cursor || undefined;
   } while (cursor);
 
-  if (userDashChannels.length === 0) return { created: [], memberOf: [] };
+  if (userDashChannels.length === 0) {
+    return {
+      open: { created: [], memberOf: [] },
+      closed: { created: [], memberOf: [] },
+    };
+  }
 
   // Get pinned messages to identify creator in parallel
   const pinChecks = await Promise.allSettled(
     userDashChannels.map((ch) => client.pins.list({ channel: ch.id })),
   );
 
-  const created: DashChannel[] = [];
-  const memberOf: DashChannel[] = [];
+  const result: PartitionedChannels = {
+    open: { created: [], memberOf: [] },
+    closed: { created: [], memberOf: [] },
+  };
 
   for (let i = 0; i < userDashChannels.length; i++) {
     const ch = userDashChannels[i];
@@ -112,14 +135,15 @@ async function fetchDashChannels(
       isCreator = creatorId === userId;
     }
 
+    const bucket = ch.isArchived ? result.closed : result.open;
     if (isCreator) {
-      created.push(ch);
+      bucket.created.push(ch);
     } else {
-      memberOf.push(ch);
+      bucket.memberOf.push(ch);
     }
   }
 
-  return { created, memberOf };
+  return result;
 }
 
 function channelSectionBlocks(
@@ -127,6 +151,7 @@ function channelSectionBlocks(
   channels: DashChannel[],
   emptyText: string,
   showClose: boolean,
+  showExport: boolean,
 ): KnownBlock[] {
   const blocks: KnownBlock[] = [
     {
@@ -149,38 +174,75 @@ function channelSectionBlocks(
       text: { type: "mrkdwn", text: `<#${ch.id}>` },
     });
 
+    const elements: KnownBlock[] = [];
+
+    if (showExport) {
+      elements.push({
+        type: "button",
+        text: { type: "plain_text", text: LABEL_EXPORT },
+        action_id: `home_export_${ch.id}`,
+        value: `${ch.id}:${ch.name}`,
+      } as unknown as KnownBlock);
+    }
+
     if (showClose) {
+      elements.push(
+        {
+          type: "button",
+          text: { type: "plain_text", text: LABEL_BROADCAST_CLOSE },
+          action_id: `home_broadcast_close_${ch.id}`,
+          value: ch.id,
+        } as unknown as KnownBlock,
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Close channel" },
+          style: "danger",
+          action_id: `home_close_${ch.id}`,
+          value: ch.id,
+          confirm: {
+            title: { type: "plain_text", text: "Close this channel?" },
+            text: {
+              type: "mrkdwn",
+              text: "This will archive the channel. This action cannot be undone.",
+            },
+            confirm: { type: "plain_text", text: "Close it" },
+            deny: { type: "plain_text", text: "Cancel" },
+          },
+        } as unknown as KnownBlock,
+      );
+    }
+
+    if (elements.length > 0) {
       blocks.push({
         type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: { type: "plain_text", text: LABEL_BROADCAST_CLOSE },
-            action_id: `home_broadcast_close_${ch.id}`,
-            value: ch.id,
-          },
-          {
-            type: "button",
-            text: { type: "plain_text", text: "Close channel" },
-            style: "danger",
-            action_id: `home_close_${ch.id}`,
-            value: ch.id,
-            confirm: {
-              title: { type: "plain_text", text: "Close this channel?" },
-              text: {
-                type: "mrkdwn",
-                text: "This will archive the channel. This action cannot be undone.",
-              },
-              confirm: { type: "plain_text", text: "Close it" },
-              deny: { type: "plain_text", text: "Cancel" },
-            },
-          },
-        ],
-      });
+        elements,
+      } as unknown as KnownBlock);
     }
   }
 
   return blocks;
+}
+
+function tabToggleBlocks(activeTab: "open" | "closed"): KnownBlock[] {
+  return [
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: LABEL_TAB_OPEN },
+          action_id: "home_tab_open",
+          ...(activeTab === "open" ? { style: "primary" } : {}),
+        },
+        {
+          type: "button",
+          text: { type: "plain_text", text: LABEL_TAB_CLOSED },
+          action_id: "home_tab_closed",
+          ...(activeTab === "closed" ? { style: "primary" } : {}),
+        },
+      ],
+    } as unknown as KnownBlock,
+  ];
 }
 
 async function publishHomeView(
@@ -189,25 +251,28 @@ async function publishHomeView(
   teamId: string,
   logger: Logger,
 ): Promise<void> {
-  let created: DashChannel[] = [];
-  let memberOf: DashChannel[] = [];
+  let channelData: PartitionedChannels = {
+    open: { created: [], memberOf: [] },
+    closed: { created: [], memberOf: [] },
+  };
 
   try {
     const cacheKey = `${teamId}:${userId}`;
     const cached = dashChannelCache.get(cacheKey);
     const now = Date.now();
-    let data: { created: DashChannel[]; memberOf: DashChannel[] };
     if (cached && now - cached.timestamp < CACHE_TTL_MS) {
-      data = cached.data;
+      channelData = cached.data;
     } else {
-      data = await fetchDashChannels(client, userId, teamId);
-      dashChannelCache.set(cacheKey, { data, timestamp: now });
+      channelData = await fetchDashChannels(client, userId, teamId);
+      dashChannelCache.set(cacheKey, { data: channelData, timestamp: now });
     }
-    created = data.created;
-    memberOf = data.memberOf;
   } catch (error) {
     logger.error("Failed to fetch dash channels for home view:", error);
   }
+
+  const tabKey = `${teamId}:${userId}`;
+  const activeTab = viewTabState.get(tabKey) ?? "open";
+  const data = activeTab === "open" ? channelData.open : channelData.closed;
 
   const blocks: KnownBlock[] = [
     {
@@ -231,18 +296,21 @@ async function publishHomeView(
       ],
     },
     { type: "divider" },
+    ...tabToggleBlocks(activeTab),
     ...channelSectionBlocks(
       "Dash channels you created",
-      created,
+      data.created,
       "_You haven't created any dash channels yet._",
+      activeTab === "open",
       true,
     ),
     { type: "divider" },
     ...channelSectionBlocks(
       "Other dash channels you're a member of",
-      memberOf,
+      data.memberOf,
       "_You're not a member of any other dash channels._",
       false,
+      true,
     ),
   ];
 
@@ -256,6 +324,7 @@ async function publishHomeView(
 export function _clearCacheForTesting(): void {
   dashChannelCache.clear();
   botUserIdCache.clear();
+  viewTabState.clear();
 }
 
 export function registerHomeHandlers(app: App): void {
@@ -282,6 +351,36 @@ export function registerHomeHandlers(app: App): void {
       });
     } catch (error) {
       logger.error("Failed to open modal from home:", error);
+    }
+  });
+
+  app.action("home_tab_open", async ({ ack, body, client, logger }) => {
+    await ack();
+    const teamId = body.team?.id;
+    const userId = body.user.id;
+    if (!teamId) return;
+
+    viewTabState.set(`${teamId}:${userId}`, "open");
+    dashChannelCache.delete(`${teamId}:${userId}`);
+    try {
+      await publishHomeView(client, userId, teamId, logger);
+    } catch (error) {
+      logger.error("Failed to refresh home view after tab switch:", error);
+    }
+  });
+
+  app.action("home_tab_closed", async ({ ack, body, client, logger }) => {
+    await ack();
+    const teamId = body.team?.id;
+    const userId = body.user.id;
+    if (!teamId) return;
+
+    viewTabState.set(`${teamId}:${userId}`, "closed");
+    dashChannelCache.delete(`${teamId}:${userId}`);
+    try {
+      await publishHomeView(client, userId, teamId, logger);
+    } catch (error) {
+      logger.error("Failed to refresh home view after tab switch:", error);
     }
   });
 
