@@ -86,8 +86,11 @@ async function fetchDashChannels(
 ): Promise<PartitionedChannels> {
   const botUserId = await getBotUserId(client, teamId);
 
-  // Get dash channels the user is a member of directly (including archived)
+  // Get open dash channels the user is a member of.
+  // Note: users.conversations with a user param may not return archived
+  // channels even with exclude_archived:false, so we handle those separately.
   const userDashChannels: DashChannel[] = [];
+  const userChannelIds = new Set<string>();
   let cursor: string | undefined;
   do {
     const result = await client.users.conversations({
@@ -99,6 +102,7 @@ async function fetchDashChannels(
     });
     for (const ch of result.channels ?? []) {
       if (ch.id && ch.name?.startsWith(CHANNEL_PREFIX)) {
+        userChannelIds.add(ch.id);
         userDashChannels.push({
           id: ch.id,
           name: ch.name,
@@ -108,6 +112,58 @@ async function fetchDashChannels(
     }
     cursor = result.response_metadata?.next_cursor || undefined;
   } while (cursor);
+
+  // Find archived dash channels via the bot's own channel list, since
+  // the bot is a member of every dash channel it created.
+  const archivedCandidates: { id: string; name: string }[] = [];
+  let botCursor: string | undefined;
+  do {
+    const result = await client.users.conversations({
+      types: "public_channel",
+      exclude_archived: false,
+      limit: 200,
+      cursor: botCursor,
+    });
+    for (const ch of result.channels ?? []) {
+      if (
+        ch.id &&
+        ch.name?.startsWith(CHANNEL_PREFIX) &&
+        ch.is_archived &&
+        !userChannelIds.has(ch.id)
+      ) {
+        archivedCandidates.push({ id: ch.id, name: ch.name });
+      }
+    }
+    botCursor = result.response_metadata?.next_cursor || undefined;
+  } while (botCursor);
+
+  // Check user membership for each archived candidate
+  if (archivedCandidates.length > 0) {
+    const memberChecks = await Promise.allSettled(
+      archivedCandidates.map(async (ch) => {
+        let memberCursor: string | undefined;
+        do {
+          const page = await client.conversations.members({
+            channel: ch.id,
+            cursor: memberCursor,
+          });
+          if (page.members?.includes(userId)) return true;
+          memberCursor = page.response_metadata?.next_cursor || undefined;
+        } while (memberCursor);
+        return false;
+      }),
+    );
+    for (let i = 0; i < archivedCandidates.length; i++) {
+      const check = memberChecks[i];
+      if (check.status === "fulfilled" && check.value) {
+        userDashChannels.push({
+          id: archivedCandidates[i].id,
+          name: archivedCandidates[i].name,
+          isArchived: true,
+        });
+      }
+    }
+  }
 
   if (userDashChannels.length === 0) {
     return {

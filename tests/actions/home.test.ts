@@ -419,6 +419,11 @@ describe("registerHomeHandlers", () => {
         .mockResolvedValueOnce({
           channels: [{ id: "C_PAGE2", name: "-page2" }],
           response_metadata: {},
+        })
+        // Third call: bot's own channels (for archived fallback)
+        .mockResolvedValueOnce({
+          channels: [],
+          response_metadata: {},
         });
       client.pins.list.mockResolvedValue({
         items: [{ message: { user: "U_BOT", text: `<@U_VISITOR> ${CREATOR_MSG_TEXT}` } }],
@@ -431,8 +436,9 @@ describe("registerHomeHandlers", () => {
         logger: createMockLogger(),
       });
 
-      // Should have called users.conversations twice (once per page)
-      expect(client.users.conversations).toHaveBeenCalledTimes(2);
+      // Should have called users.conversations 3 times:
+      // 2 for user's paginated channels + 1 for bot's archived channel check
+      expect(client.users.conversations).toHaveBeenCalledTimes(3);
       expect(client.users.conversations).toHaveBeenCalledWith(
         expect.objectContaining({ cursor: "cursor_abc" }),
       );
@@ -444,6 +450,84 @@ describe("registerHomeHandlers", () => {
         .map((b) => b.text!.text);
       expect(channelMentions).toContain("<#C_PAGE1>");
       expect(channelMentions).toContain("<#C_PAGE2>");
+    });
+
+    it("finds archived channels via bot fallback when user call omits them", async () => {
+      const client = createMockClient();
+
+      // First call (user's channels): only returns open channels
+      client.users.conversations.mockResolvedValueOnce({
+        channels: [{ id: "C_OPEN", name: "-open-ch", is_archived: false }],
+        response_metadata: {},
+      });
+      // Second call (bot's channels): returns both open and archived
+      client.users.conversations.mockResolvedValueOnce({
+        channels: [
+          { id: "C_OPEN", name: "-open-ch", is_archived: false },
+          { id: "C_ARCHIVED", name: "-old-ch", is_archived: true },
+        ],
+        response_metadata: {},
+      });
+      // Membership check for the archived channel
+      client.conversations.members.mockResolvedValueOnce({
+        members: ["U_VISITOR", "U_OTHER"],
+        response_metadata: {},
+      });
+      // Pin checks for both channels
+      client.pins.list.mockResolvedValueOnce({ items: [] }).mockResolvedValueOnce({ items: [] });
+
+      // Switch to Closed tab to see archived channels
+      const ack = vi.fn();
+      await app.handlers["action:home_tab_closed"]({
+        ack,
+        body: { team: { id: "T_TEAM" }, user: { id: "U_VISITOR" } },
+        client,
+        logger: createMockLogger(),
+      });
+
+      const blocks = getPublishedBlocks(client);
+      const channelMentions = blocks
+        .filter((b) => b.type === "section" && b.text?.text?.startsWith("<#"))
+        .map((b) => b.text!.text);
+
+      // Archived channel should appear even though user's call didn't return it
+      expect(channelMentions).toContain("<#C_ARCHIVED>");
+      expect(channelMentions).not.toContain("<#C_OPEN>");
+    });
+
+    it("skips archived channels where user is not a member", async () => {
+      const client = createMockClient();
+
+      // User's channels: empty
+      client.users.conversations.mockResolvedValueOnce({
+        channels: [],
+        response_metadata: {},
+      });
+      // Bot's channels: has an archived channel
+      client.users.conversations.mockResolvedValueOnce({
+        channels: [{ id: "C_ARCHIVED", name: "-old-ch", is_archived: true }],
+        response_metadata: {},
+      });
+      // Membership check: user is NOT a member
+      client.conversations.members.mockResolvedValueOnce({
+        members: ["U_OTHER"],
+        response_metadata: {},
+      });
+
+      const ack = vi.fn();
+      await app.handlers["action:home_tab_closed"]({
+        ack,
+        body: { team: { id: "T_TEAM" }, user: { id: "U_VISITOR" } },
+        client,
+        logger: createMockLogger(),
+      });
+
+      const blocks = getPublishedBlocks(client);
+      const channelMentions = blocks
+        .filter((b) => b.type === "section" && b.text?.text?.startsWith("<#"))
+        .map((b) => b.text!.text);
+
+      expect(channelMentions).not.toContain("<#C_ARCHIVED>");
     });
 
     it("fetches archived channels with exclude_archived: false", async () => {
