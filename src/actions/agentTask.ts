@@ -9,6 +9,12 @@ import {
   generatePlan,
   type PlanResult,
 } from "../services/agentPlanner";
+import {
+  createExecutionId,
+  deleteExecution,
+  getExecution,
+  storeExecution,
+} from "../services/executionStore";
 import { ApiKeyMissingError, createOpenAIClient } from "../services/openai";
 import { createPlanId, deletePlan, getPlan, type PlanData, storePlan } from "../services/planStore";
 import type { ActionBody } from "../types";
@@ -88,14 +94,43 @@ function planBlocks(plan: AgentPlan, planId: string): KnownBlock[] {
   ] as KnownBlock[];
 }
 
-function resultBlocks(result: ExecutionResult): KnownBlock[] {
+function resultBlocks(result: ExecutionResult, executionId: string): KnownBlock[] {
   const detailLines = result.details.join("\n");
+  const summaryText = result.summary || "Agent task completed.";
 
   return [
+    ...textSectionBlocks(`*Agent task complete*\n\n${summaryText}`),
     ...textSectionBlocks(
-      `*Agent task complete*\n\nSteps completed: ${result.stepsCompleted} | Failed: ${result.stepsFailed}`,
+      `*Details:* ${result.stepsCompleted} steps completed, ${result.stepsFailed} failed${detailLines ? `\n${detailLines}` : ""}`,
     ),
-    ...(detailLines ? textSectionBlocks(`*Details:*\n${detailLines}`) : []),
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Post Summary to Channel" },
+          style: "primary",
+          action_id: "agent_post_summary",
+          value: executionId,
+        },
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Skip" },
+          action_id: "agent_skip_summary",
+          value: executionId,
+        },
+      ],
+    },
+  ] as KnownBlock[];
+}
+
+function summaryBlocks(summaryText: string, userId: string): KnownBlock[] {
+  return [
+    ...textSectionBlocks(summaryText),
+    {
+      type: "context",
+      elements: [{ type: "mrkdwn", text: `AI agent task triggered by <@${userId}>` }],
+    } as unknown as KnownBlock,
   ];
 }
 
@@ -217,10 +252,19 @@ export function registerAgentTaskHandlers(app: App): void {
           taskDescription,
         );
 
+        const executionId = createExecutionId();
+        storeExecution({
+          id: executionId,
+          userId,
+          channelId,
+          summary: result.summary,
+          createdAt: Date.now(),
+        });
+
         await client.chat.postMessage({
           channel: dmChannelId,
           text: "Agent task complete",
-          blocks: resultBlocks(result),
+          blocks: resultBlocks(result, executionId),
         });
       } else {
         // Store plan and show approval DM
@@ -306,10 +350,19 @@ export function registerAgentTaskHandlers(app: App): void {
         planData.taskDescription,
       );
 
+      const executionId = createExecutionId();
+      storeExecution({
+        id: executionId,
+        userId: planData.userId,
+        channelId: planData.channelId,
+        summary: result.summary,
+        createdAt: Date.now(),
+      });
+
       await client.chat.postMessage({
         channel: planData.dmChannelId,
         text: "Agent task complete",
-        blocks: resultBlocks(result),
+        blocks: resultBlocks(result, executionId),
       });
     } catch (error) {
       logger.error("Agent execution failed:", error);
@@ -376,7 +429,88 @@ export function registerAgentTaskHandlers(app: App): void {
     }
   });
 
-  // 7. Refine submission — re-generate plan, update same DM
+  // 7. Post execution summary to channel
+  app.action("agent_post_summary", async ({ ack, body, client, logger }) => {
+    await ack();
+    const actionBody = body as unknown as ActionBody;
+    const executionId = actionBody.actions?.[0]?.value;
+    if (!executionId) return;
+    const exec = getExecution(executionId);
+    if (!exec || actionBody.user?.id !== exec.userId) return;
+
+    try {
+      await client.chat.postMessage({
+        channel: exec.channelId,
+        text: exec.summary,
+        blocks: summaryBlocks(exec.summary, exec.userId),
+      });
+    } catch (error) {
+      logger.error("Failed to post summary to channel:", error);
+    }
+
+    // Update DM to remove buttons
+    const dmChannelId = actionBody.channel?.id;
+    const messageTs = (body as unknown as { message?: { ts?: string } }).message?.ts;
+    if (dmChannelId && messageTs) {
+      try {
+        await client.chat.update({
+          channel: dmChannelId,
+          ts: messageTs,
+          text: "Agent task complete — summary posted to channel",
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: ":white_check_mark: Agent task complete — summary posted to channel.",
+              },
+            },
+          ],
+        });
+      } catch (error) {
+        logger.error("Failed to update DM after posting summary:", error);
+      }
+    }
+
+    deleteExecution(executionId);
+  });
+
+  // 8. Skip posting summary
+  app.action("agent_skip_summary", async ({ ack, body, client, logger }) => {
+    await ack();
+    const actionBody = body as unknown as ActionBody;
+    const executionId = actionBody.actions?.[0]?.value;
+    if (!executionId) return;
+    const exec = getExecution(executionId);
+    if (!exec || actionBody.user?.id !== exec.userId) return;
+
+    const dmChannelId = actionBody.channel?.id;
+    const messageTs = (body as unknown as { message?: { ts?: string } }).message?.ts;
+    if (dmChannelId && messageTs) {
+      try {
+        await client.chat.update({
+          channel: dmChannelId,
+          ts: messageTs,
+          text: "Agent task complete",
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: ":white_check_mark: Agent task complete.",
+              },
+            },
+          ],
+        });
+      } catch (error) {
+        logger.error("Failed to update DM after skipping summary:", error);
+      }
+    }
+
+    deleteExecution(executionId);
+  });
+
+  // 9. Refine submission — re-generate plan, update same DM
   app.view("agent_refine_submit", async ({ ack, view, client, logger }) => {
     await ack();
 
