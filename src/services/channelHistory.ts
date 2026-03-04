@@ -65,8 +65,11 @@ export async function fetchChannelMessages(
 
         // First message in replies is the parent — skip it
         msg.replies = replies.slice(1);
-      } catch {
-        // Skip replies for this thread on failure
+      } catch (error) {
+        console.error(
+          `Failed to fetch replies for thread ${msg.ts} in channel ${channelId}:`,
+          error,
+        );
       }
     }
   }

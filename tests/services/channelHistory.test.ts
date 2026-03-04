@@ -232,6 +232,7 @@ describe("fetchChannelMessages", () => {
       },
     ]);
 
+    vi.spyOn(console, "error").mockImplementation(() => {});
     client.conversations.replies = vi.fn().mockImplementation(({ ts }: { ts: string }) => {
       if (ts === "200") return Promise.reject(new Error("rate limited"));
       return Promise.resolve({

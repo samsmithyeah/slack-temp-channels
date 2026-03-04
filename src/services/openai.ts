@@ -90,15 +90,8 @@ export function formatMessagesForPrompt(
   }>,
 ): ChannelMessage[] {
   // Flatten replies into the list right after their parent
-  const flattened: Array<{ user?: string; text?: string; subtype?: string }> = [];
-  for (const m of rawMessages) {
-    flattened.push(m);
-    if (m.replies) {
-      flattened.push(...m.replies);
-    }
-  }
-
-  return flattened
+  return rawMessages
+    .flatMap((m) => [m, ...(m.replies ?? [])])
     .filter(
       (m): m is { user: string; text: string; subtype?: string } =>
         !!m.user && !!m.text && !m.subtype,
