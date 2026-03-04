@@ -40,41 +40,39 @@ export async function fetchChannelMessages(
   // conversations.history returns newest-first; reverse to chronological order
   allMessages.reverse();
 
-  // Fetch thread replies for messages that have them
-  await Promise.all(
-    allMessages.map(async (msg) => {
-      if (msg.reply_count && msg.reply_count > 0 && msg.ts) {
-        try {
-          const replies: RawMessage[] = [];
-          let replyCursor: string | undefined;
-          let replyPage = 0;
+  // Fetch thread replies sequentially to avoid hitting Slack rate limits
+  for (const msg of allMessages) {
+    if (msg.reply_count && msg.reply_count > 0 && msg.ts) {
+      try {
+        const replies: RawMessage[] = [];
+        let replyCursor: string | undefined;
+        let replyPage = 0;
 
-          do {
-            const result = await client.conversations.replies({
-              channel: channelId,
-              ts: msg.ts,
-              limit: MESSAGES_PER_PAGE,
-              cursor: replyCursor,
-            });
+        do {
+          const result = await client.conversations.replies({
+            channel: channelId,
+            ts: msg.ts,
+            limit: MESSAGES_PER_PAGE,
+            cursor: replyCursor,
+          });
 
-            const replyMessages = (result.messages ?? []) as RawMessage[];
-            replies.push(...replyMessages);
+          const replyMessages = (result.messages ?? []) as RawMessage[];
+          replies.push(...replyMessages);
 
-            replyCursor = result.response_metadata?.next_cursor || undefined;
-            replyPage++;
-          } while (replyCursor && replyPage < MAX_REPLY_PAGES);
+          replyCursor = result.response_metadata?.next_cursor || undefined;
+          replyPage++;
+        } while (replyCursor && replyPage < MAX_REPLY_PAGES);
 
-          // First message in replies is the parent — skip it
-          msg.replies = replies.slice(1);
-        } catch (error) {
-          console.error(
-            `Failed to fetch replies for thread ${msg.ts} in channel ${channelId}:`,
-            error,
-          );
-        }
+        // First message in replies is the parent — skip it
+        msg.replies = replies.slice(1);
+      } catch (error) {
+        console.error(
+          `Failed to fetch replies for thread ${msg.ts} in channel ${channelId}:`,
+          error,
+        );
       }
-    }),
-  );
+    }
+  }
 
   return allMessages;
 }
@@ -118,6 +116,21 @@ function formatTimestamp(ts: string): string {
     .replace(/\.\d+Z$/, " UTC");
 }
 
+function formatMessageLine(msg: RawMessage, userNames: Map<string, string>): string {
+  const name = msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown";
+  const time = msg.ts ? formatTimestamp(msg.ts) : "";
+  return `[${time}] ${name}: ${sanitizeText(msg.text)}`;
+}
+
+function toMessageJson(msg: RawMessage, userNames: Map<string, string>) {
+  return {
+    ts: msg.ts ?? "",
+    user: msg.user ?? "",
+    userName: msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown",
+    text: msg.text ?? "",
+  };
+}
+
 export function formatTranscript(
   channelName: string,
   messages: RawMessage[],
@@ -127,16 +140,12 @@ export function formatTranscript(
 
   for (const msg of messages) {
     if (!isUserMessage(msg)) continue;
-    const name = msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown";
-    const time = msg.ts ? formatTimestamp(msg.ts) : "";
-    lines.push(`[${time}] ${name}: ${sanitizeText(msg.text)}`);
+    lines.push(formatMessageLine(msg, userNames));
 
     if (msg.replies) {
       for (const reply of msg.replies) {
         if (!isUserMessage(reply)) continue;
-        const replyName = reply.user ? (userNames.get(reply.user) ?? reply.user) : "Unknown";
-        const replyTime = reply.ts ? formatTimestamp(reply.ts) : "";
-        lines.push(`  ↳ [${replyTime}] ${replyName}: ${sanitizeText(reply.text)}`);
+        lines.push(`  ↳ ${formatMessageLine(reply, userNames)}`);
       }
     }
   }
@@ -156,18 +165,12 @@ export function formatTranscriptJson(
     channel: { id: channelId, name: channelName },
     exportedAt: new Date().toISOString(),
     messages: filtered.map((msg) => ({
-      ts: msg.ts ?? "",
-      user: msg.user ?? "",
-      userName: msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown",
-      text: msg.text ?? "",
+      ...toMessageJson(msg, userNames),
       ...(msg.replies?.length
         ? {
-            replies: msg.replies.filter(isUserMessage).map((reply) => ({
-              ts: reply.ts ?? "",
-              user: reply.user ?? "",
-              userName: reply.user ? (userNames.get(reply.user) ?? reply.user) : "Unknown",
-              text: reply.text ?? "",
-            })),
+            replies: msg.replies
+              .filter(isUserMessage)
+              .map((reply) => toMessageJson(reply, userNames)),
           }
         : {}),
     })),
