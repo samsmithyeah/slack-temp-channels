@@ -5,12 +5,26 @@ import {
   formatTranscriptJson,
 } from "../../src/services/channelHistory";
 
-function createMockClient(pages: Array<{ messages: unknown[]; next_cursor?: string }>) {
+function createMockClient(
+  pages: Array<{ messages: unknown[]; next_cursor?: string }>,
+  replyPages?: Record<string, Array<{ messages: unknown[]; next_cursor?: string }>>,
+) {
   let callIndex = 0;
+  const replyCallIndices: Record<string, number> = {};
   return {
     conversations: {
       history: vi.fn().mockImplementation(() => {
         const page = pages[callIndex++];
+        return Promise.resolve({
+          messages: page.messages,
+          response_metadata: { next_cursor: page.next_cursor ?? "" },
+        });
+      }),
+      replies: vi.fn().mockImplementation(({ ts }: { ts: string }) => {
+        const threadPages = replyPages?.[ts] ?? [{ messages: [] }];
+        const idx = replyCallIndices[ts] ?? 0;
+        replyCallIndices[ts] = idx + 1;
+        const page = threadPages[idx] ?? { messages: [] };
         return Promise.resolve({
           messages: page.messages,
           response_metadata: { next_cursor: page.next_cursor ?? "" },
@@ -114,6 +128,132 @@ describe("fetchChannelMessages", () => {
       expect.objectContaining({ channel: "C_MY_CHANNEL" }),
     );
   });
+
+  it("fetches replies for threaded messages", async () => {
+    const client = createMockClient(
+      [{ messages: [{ user: "U1", text: "parent", ts: "100", reply_count: 2 }] }],
+      {
+        "100": [
+          {
+            messages: [
+              { user: "U1", text: "parent", ts: "100" },
+              { user: "U2", text: "reply1", ts: "101" },
+              { user: "U3", text: "reply2", ts: "102" },
+            ],
+          },
+        ],
+      },
+    );
+
+    const result = await fetchChannelMessages(
+      client as unknown as Parameters<typeof fetchChannelMessages>[0],
+      "C123",
+    );
+
+    expect(client.conversations.replies).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "C123", ts: "100" }),
+    );
+    expect(result[0].replies).toEqual([
+      { user: "U2", text: "reply1", ts: "101" },
+      { user: "U3", text: "reply2", ts: "102" },
+    ]);
+  });
+
+  it("paginates thread replies", async () => {
+    const client = createMockClient(
+      [{ messages: [{ user: "U1", text: "parent", ts: "100", reply_count: 2 }] }],
+      {
+        "100": [
+          {
+            messages: [
+              { user: "U1", text: "parent", ts: "100" },
+              { user: "U2", text: "reply1", ts: "101" },
+            ],
+            next_cursor: "page2",
+          },
+          {
+            messages: [{ user: "U3", text: "reply2", ts: "102" }],
+          },
+        ],
+      },
+    );
+
+    const result = await fetchChannelMessages(
+      client as unknown as Parameters<typeof fetchChannelMessages>[0],
+      "C123",
+    );
+
+    expect(client.conversations.replies).toHaveBeenCalledTimes(2);
+    expect(result[0].replies).toHaveLength(2);
+    expect(result[0].replies![1].text).toBe("reply2");
+  });
+
+  it("skips reply fetch for non-threaded messages", async () => {
+    const client = createMockClient([{ messages: [{ user: "U1", text: "no thread", ts: "100" }] }]);
+
+    await fetchChannelMessages(
+      client as unknown as Parameters<typeof fetchChannelMessages>[0],
+      "C123",
+    );
+
+    expect(client.conversations.replies).not.toHaveBeenCalled();
+  });
+
+  it("caps reply pagination at 50 pages", async () => {
+    const replyPages = Array.from({ length: 55 }, (_, i) => ({
+      messages: [{ user: "U2", text: `reply${i}`, ts: String(200 + i) }],
+      next_cursor: `rc${i + 1}`,
+    }));
+    // First page includes the parent echo
+    replyPages[0].messages.unshift({ user: "U1", text: "parent", ts: "100" });
+
+    const client = createMockClient(
+      [{ messages: [{ user: "U1", text: "parent", ts: "100", reply_count: 55 }] }],
+      { "100": replyPages },
+    );
+
+    await fetchChannelMessages(
+      client as unknown as Parameters<typeof fetchChannelMessages>[0],
+      "C123",
+    );
+
+    expect(client.conversations.replies).toHaveBeenCalledTimes(50);
+  });
+
+  it("skips replies gracefully when conversations.replies fails", async () => {
+    // conversations.history returns newest-first; after reverse: 100, 200, 300
+    const client = createMockClient([
+      {
+        messages: [
+          { user: "U1", text: "no thread", ts: "300" },
+          { user: "U1", text: "bad thread", ts: "200", reply_count: 1 },
+          { user: "U1", text: "ok thread", ts: "100", reply_count: 1 },
+        ],
+      },
+    ]);
+
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    client.conversations.replies = vi.fn().mockImplementation(({ ts }: { ts: string }) => {
+      if (ts === "200") return Promise.reject(new Error("rate limited"));
+      return Promise.resolve({
+        messages: [
+          { user: "U1", text: "parent", ts },
+          { user: "U2", text: "reply", ts: `${ts}.1` },
+        ],
+        response_metadata: {},
+      });
+    });
+
+    const result = await fetchChannelMessages(
+      client as unknown as Parameters<typeof fetchChannelMessages>[0],
+      "C123",
+    );
+
+    // After reverse: [100 (ok), 200 (bad), 300 (no thread)]
+    expect(result[0].replies).toEqual([{ user: "U2", text: "reply", ts: "100.1" }]);
+    expect(result[1].replies).toBeUndefined();
+    expect(result[2].replies).toBeUndefined();
+  });
 });
 
 describe("formatTranscript", () => {
@@ -158,6 +298,47 @@ describe("formatTranscript", () => {
 
     expect(result).toContain("U_UNKNOWN: Hi");
   });
+
+  it("sanitizes newlines in message text to prevent spoofing", () => {
+    const userNames = new Map([["U1", "Alice"]]);
+    const messages = [
+      {
+        user: "U1",
+        text: "legit\n[2024-01-01 00:00:00 UTC] Evil: fake message",
+        ts: "1700000000.000000",
+      },
+    ];
+
+    const result = formatTranscript("ch", messages, userNames);
+    const lines = result.split("\n");
+
+    // The injected "message" must not appear on its own line
+    expect(lines.some((l) => l.startsWith("[2024-01-01 00:00:00 UTC] Evil:"))).toBe(false);
+    // The entire text is collapsed onto one line with the real author
+    expect(result).toContain("Alice: legit [2024-01-01 00:00:00 UTC] Evil: fake message");
+  });
+
+  it("indents thread replies with ↳", () => {
+    const userNames = new Map([
+      ["U1", "Alice"],
+      ["U2", "Bob"],
+    ]);
+    const messages = [
+      {
+        user: "U1",
+        text: "Anyone seen this bug?",
+        ts: "1700000000.000000",
+        reply_count: 1,
+        replies: [{ user: "U2", text: "Yes, I'll take a look", ts: "1700000060.000000" }],
+      },
+    ];
+
+    const result = formatTranscript("ch", messages, userNames);
+
+    expect(result).toContain("Alice: Anyone seen this bug?");
+    expect(result).toContain("  ↳ ");
+    expect(result).toContain("Bob: Yes, I'll take a look");
+  });
 });
 
 describe("formatTranscriptJson", () => {
@@ -191,5 +372,30 @@ describe("formatTranscriptJson", () => {
 
     expect(parsed.messages).toHaveLength(1);
     expect(parsed.messages[0].text).toBe("Hello");
+  });
+
+  it("nests replies array in parent messages with threads", () => {
+    const userNames = new Map([
+      ["U1", "Alice"],
+      ["U2", "Bob"],
+    ]);
+    const messages = [
+      {
+        user: "U1",
+        text: "Parent",
+        ts: "1700000000.000000",
+        reply_count: 1,
+        replies: [{ user: "U2", text: "Reply", ts: "1700000060.000000" }],
+      },
+      { user: "U2", text: "No thread", ts: "1700000120.000000" },
+    ];
+
+    const result = formatTranscriptJson("ch", "C1", messages, userNames);
+    const parsed = JSON.parse(result);
+
+    expect(parsed.messages[0].replies).toEqual([
+      { ts: "1700000060.000000", user: "U2", userName: "Bob", text: "Reply" },
+    ]);
+    expect(parsed.messages[1].replies).toBeUndefined();
   });
 });

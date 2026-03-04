@@ -3,12 +3,15 @@ import type { WebClient } from "@slack/web-api";
 const DEFAULT_MAX_PAGES = 3;
 export const EXPORT_MAX_PAGES = 100;
 const MESSAGES_PER_PAGE = 100;
+const MAX_REPLY_PAGES = 50;
 
 export interface RawMessage {
   user?: string;
   text?: string;
   subtype?: string;
   ts?: string;
+  reply_count?: number;
+  replies?: RawMessage[];
 }
 
 export async function fetchChannelMessages(
@@ -35,7 +38,43 @@ export async function fetchChannelMessages(
   } while (cursor && page < maxPages);
 
   // conversations.history returns newest-first; reverse to chronological order
-  return allMessages.reverse();
+  allMessages.reverse();
+
+  // Fetch thread replies sequentially to avoid hitting Slack rate limits
+  for (const msg of allMessages) {
+    if (msg.reply_count && msg.reply_count > 0 && msg.ts) {
+      try {
+        const replies: RawMessage[] = [];
+        let replyCursor: string | undefined;
+        let replyPage = 0;
+
+        do {
+          const result = await client.conversations.replies({
+            channel: channelId,
+            ts: msg.ts,
+            limit: MESSAGES_PER_PAGE,
+            cursor: replyCursor,
+          });
+
+          const replyMessages = (result.messages ?? []) as RawMessage[];
+          replies.push(...replyMessages);
+
+          replyCursor = result.response_metadata?.next_cursor || undefined;
+          replyPage++;
+        } while (replyCursor && replyPage < MAX_REPLY_PAGES);
+
+        // First message in replies is the parent — skip it
+        msg.replies = replies.slice(1);
+      } catch (error) {
+        console.error(
+          `Failed to fetch replies for thread ${msg.ts} in channel ${channelId}:`,
+          error,
+        );
+      }
+    }
+  }
+
+  return allMessages;
 }
 
 export async function resolveUserNames(
@@ -65,12 +104,31 @@ function isUserMessage(msg: RawMessage): boolean {
   return msg.subtype !== "channel_join" && msg.subtype !== "channel_leave";
 }
 
+function sanitizeText(text?: string): string {
+  return (text ?? "").replace(/\n/g, " ");
+}
+
 function formatTimestamp(ts: string): string {
   const date = new Date(Number(ts) * 1000);
   return date
     .toISOString()
     .replace("T", " ")
     .replace(/\.\d+Z$/, " UTC");
+}
+
+function formatMessageLine(msg: RawMessage, userNames: Map<string, string>): string {
+  const name = msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown";
+  const time = msg.ts ? formatTimestamp(msg.ts) : "";
+  return `[${time}] ${name}: ${sanitizeText(msg.text)}`;
+}
+
+function toMessageJson(msg: RawMessage, userNames: Map<string, string>) {
+  return {
+    ts: msg.ts ?? "",
+    user: msg.user ?? "",
+    userName: msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown",
+    text: msg.text ?? "",
+  };
 }
 
 export function formatTranscript(
@@ -82,9 +140,14 @@ export function formatTranscript(
 
   for (const msg of messages) {
     if (!isUserMessage(msg)) continue;
-    const name = msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown";
-    const time = msg.ts ? formatTimestamp(msg.ts) : "";
-    lines.push(`[${time}] ${name}: ${msg.text ?? ""}`);
+    lines.push(formatMessageLine(msg, userNames));
+
+    if (msg.replies) {
+      for (const reply of msg.replies) {
+        if (!isUserMessage(reply)) continue;
+        lines.push(`  ↳ ${formatMessageLine(reply, userNames)}`);
+      }
+    }
   }
 
   return `${lines.join("\n")}\n`;
@@ -102,10 +165,14 @@ export function formatTranscriptJson(
     channel: { id: channelId, name: channelName },
     exportedAt: new Date().toISOString(),
     messages: filtered.map((msg) => ({
-      ts: msg.ts ?? "",
-      user: msg.user ?? "",
-      userName: msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown",
-      text: msg.text ?? "",
+      ...toMessageJson(msg, userNames),
+      ...(msg.replies?.length
+        ? {
+            replies: msg.replies
+              .filter(isUserMessage)
+              .map((reply) => toMessageJson(reply, userNames)),
+          }
+        : {}),
     })),
   };
 

@@ -91,7 +91,9 @@ export function registerExportAction(app: App): void {
         return;
       }
 
-      const userIds = messages.map((m) => m.user).filter((u): u is string => !!u);
+      const userIds = messages
+        .flatMap((m) => [m.user, ...(m.replies ?? []).map((r) => r.user)])
+        .filter((u): u is string => !!u);
       const userNames = await resolveUserNames(client, userIds);
 
       let content: string;
