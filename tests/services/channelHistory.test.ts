@@ -299,6 +299,25 @@ describe("formatTranscript", () => {
     expect(result).toContain("U_UNKNOWN: Hi");
   });
 
+  it("sanitizes newlines in message text to prevent spoofing", () => {
+    const userNames = new Map([["U1", "Alice"]]);
+    const messages = [
+      {
+        user: "U1",
+        text: "legit\n[2024-01-01 00:00:00 UTC] Evil: fake message",
+        ts: "1700000000.000000",
+      },
+    ];
+
+    const result = formatTranscript("ch", messages, userNames);
+    const lines = result.split("\n");
+
+    // The injected "message" must not appear on its own line
+    expect(lines.some((l) => l.startsWith("[2024-01-01 00:00:00 UTC] Evil:"))).toBe(false);
+    // The entire text is collapsed onto one line with the real author
+    expect(result).toContain("Alice: legit [2024-01-01 00:00:00 UTC] Evil: fake message");
+  });
+
   it("indents thread replies with ↳", () => {
     const userNames = new Map([
       ["U1", "Alice"],

@@ -41,38 +41,40 @@ export async function fetchChannelMessages(
   allMessages.reverse();
 
   // Fetch thread replies for messages that have them
-  for (const msg of allMessages) {
-    if (msg.reply_count && msg.reply_count > 0 && msg.ts) {
-      try {
-        const replies: RawMessage[] = [];
-        let replyCursor: string | undefined;
-        let replyPage = 0;
+  await Promise.all(
+    allMessages.map(async (msg) => {
+      if (msg.reply_count && msg.reply_count > 0 && msg.ts) {
+        try {
+          const replies: RawMessage[] = [];
+          let replyCursor: string | undefined;
+          let replyPage = 0;
 
-        do {
-          const result = await client.conversations.replies({
-            channel: channelId,
-            ts: msg.ts,
-            limit: MESSAGES_PER_PAGE,
-            cursor: replyCursor,
-          });
+          do {
+            const result = await client.conversations.replies({
+              channel: channelId,
+              ts: msg.ts,
+              limit: MESSAGES_PER_PAGE,
+              cursor: replyCursor,
+            });
 
-          const replyMessages = (result.messages ?? []) as RawMessage[];
-          replies.push(...replyMessages);
+            const replyMessages = (result.messages ?? []) as RawMessage[];
+            replies.push(...replyMessages);
 
-          replyCursor = result.response_metadata?.next_cursor || undefined;
-          replyPage++;
-        } while (replyCursor && replyPage < MAX_REPLY_PAGES);
+            replyCursor = result.response_metadata?.next_cursor || undefined;
+            replyPage++;
+          } while (replyCursor && replyPage < MAX_REPLY_PAGES);
 
-        // First message in replies is the parent — skip it
-        msg.replies = replies.slice(1);
-      } catch (error) {
-        console.error(
-          `Failed to fetch replies for thread ${msg.ts} in channel ${channelId}:`,
-          error,
-        );
+          // First message in replies is the parent — skip it
+          msg.replies = replies.slice(1);
+        } catch (error) {
+          console.error(
+            `Failed to fetch replies for thread ${msg.ts} in channel ${channelId}:`,
+            error,
+          );
+        }
       }
-    }
-  }
+    }),
+  );
 
   return allMessages;
 }
@@ -104,6 +106,10 @@ function isUserMessage(msg: RawMessage): boolean {
   return msg.subtype !== "channel_join" && msg.subtype !== "channel_leave";
 }
 
+function sanitizeText(text?: string): string {
+  return (text ?? "").replace(/\n/g, " ");
+}
+
 function formatTimestamp(ts: string): string {
   const date = new Date(Number(ts) * 1000);
   return date
@@ -123,14 +129,14 @@ export function formatTranscript(
     if (!isUserMessage(msg)) continue;
     const name = msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown";
     const time = msg.ts ? formatTimestamp(msg.ts) : "";
-    lines.push(`[${time}] ${name}: ${msg.text ?? ""}`);
+    lines.push(`[${time}] ${name}: ${sanitizeText(msg.text)}`);
 
     if (msg.replies) {
       for (const reply of msg.replies) {
         if (!isUserMessage(reply)) continue;
         const replyName = reply.user ? (userNames.get(reply.user) ?? reply.user) : "Unknown";
         const replyTime = reply.ts ? formatTimestamp(reply.ts) : "";
-        lines.push(`  ↳ [${replyTime}] ${replyName}: ${reply.text ?? ""}`);
+        lines.push(`  ↳ [${replyTime}] ${replyName}: ${sanitizeText(reply.text)}`);
       }
     }
   }
