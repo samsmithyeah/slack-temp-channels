@@ -20,6 +20,7 @@ export function createMockClient() {
       open: vi.fn().mockResolvedValue({ channel: { id: "D_DM" } }),
       info: vi.fn().mockResolvedValue({ channel: { name: "general" } }),
       history: vi.fn().mockResolvedValue({ messages: [], response_metadata: {} }),
+      replies: vi.fn().mockResolvedValue({ messages: [], response_metadata: {} }),
       members: vi.fn().mockResolvedValue({ members: [] }),
     },
     users: {

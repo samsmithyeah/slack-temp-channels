@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-const OPENAI_MODEL = "gpt-5-mini";
+const OPENAI_MODEL = "gpt-5.2";
 const MAX_PROMPT_MESSAGES = 300;
 const MAX_CHARS_PER_MESSAGE = 500;
 
@@ -82,9 +82,23 @@ export function createOpenAIClient(): OpenAI {
 }
 
 export function formatMessagesForPrompt(
-  rawMessages: Array<{ user?: string; text?: string; subtype?: string }>,
+  rawMessages: Array<{
+    user?: string;
+    text?: string;
+    subtype?: string;
+    replies?: Array<{ user?: string; text?: string; subtype?: string }>;
+  }>,
 ): ChannelMessage[] {
-  return rawMessages
+  // Flatten replies into the list right after their parent
+  const flattened: Array<{ user?: string; text?: string; subtype?: string }> = [];
+  for (const m of rawMessages) {
+    flattened.push(m);
+    if (m.replies) {
+      flattened.push(...m.replies);
+    }
+  }
+
+  return flattened
     .filter(
       (m): m is { user: string; text: string; subtype?: string } =>
         !!m.user && !!m.text && !m.subtype,

@@ -3,12 +3,15 @@ import type { WebClient } from "@slack/web-api";
 const DEFAULT_MAX_PAGES = 3;
 export const EXPORT_MAX_PAGES = 100;
 const MESSAGES_PER_PAGE = 100;
+const MAX_REPLY_PAGES = 50;
 
 export interface RawMessage {
   user?: string;
   text?: string;
   subtype?: string;
   ts?: string;
+  reply_count?: number;
+  replies?: RawMessage[];
 }
 
 export async function fetchChannelMessages(
@@ -35,7 +38,40 @@ export async function fetchChannelMessages(
   } while (cursor && page < maxPages);
 
   // conversations.history returns newest-first; reverse to chronological order
-  return allMessages.reverse();
+  allMessages.reverse();
+
+  // Fetch thread replies for messages that have them
+  for (const msg of allMessages) {
+    if (msg.reply_count && msg.reply_count > 0 && msg.ts) {
+      try {
+        const replies: RawMessage[] = [];
+        let replyCursor: string | undefined;
+        let replyPage = 0;
+
+        do {
+          const result = await client.conversations.replies({
+            channel: channelId,
+            ts: msg.ts,
+            limit: MESSAGES_PER_PAGE,
+            cursor: replyCursor,
+          });
+
+          const replyMessages = (result.messages ?? []) as RawMessage[];
+          replies.push(...replyMessages);
+
+          replyCursor = result.response_metadata?.next_cursor || undefined;
+          replyPage++;
+        } while (replyCursor && replyPage < MAX_REPLY_PAGES);
+
+        // First message in replies is the parent — skip it
+        msg.replies = replies.slice(1);
+      } catch {
+        // Skip replies for this thread on failure
+      }
+    }
+  }
+
+  return allMessages;
 }
 
 export async function resolveUserNames(
@@ -85,6 +121,15 @@ export function formatTranscript(
     const name = msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown";
     const time = msg.ts ? formatTimestamp(msg.ts) : "";
     lines.push(`[${time}] ${name}: ${msg.text ?? ""}`);
+
+    if (msg.replies) {
+      for (const reply of msg.replies) {
+        if (!isUserMessage(reply)) continue;
+        const replyName = reply.user ? (userNames.get(reply.user) ?? reply.user) : "Unknown";
+        const replyTime = reply.ts ? formatTimestamp(reply.ts) : "";
+        lines.push(`  ↳ [${replyTime}] ${replyName}: ${reply.text ?? ""}`);
+      }
+    }
   }
 
   return `${lines.join("\n")}\n`;
@@ -106,6 +151,16 @@ export function formatTranscriptJson(
       user: msg.user ?? "",
       userName: msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown",
       text: msg.text ?? "",
+      ...(msg.replies?.length
+        ? {
+            replies: msg.replies.filter(isUserMessage).map((reply) => ({
+              ts: reply.ts ?? "",
+              user: reply.user ?? "",
+              userName: reply.user ? (userNames.get(reply.user) ?? reply.user) : "Unknown",
+              text: reply.text ?? "",
+            })),
+          }
+        : {}),
     })),
   };
 

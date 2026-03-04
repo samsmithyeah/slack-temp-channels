@@ -62,6 +62,27 @@ describe("formatMessagesForPrompt", () => {
     expect(result[0].text).toBe("message 100");
     expect(result[299].text).toBe("message 399");
   });
+
+  it("includes thread replies after their parent message", () => {
+    const messages = [
+      {
+        user: "U1",
+        text: "parent",
+        replies: [
+          { user: "U2", text: "reply1" },
+          { user: "U3", text: "reply2" },
+        ],
+      },
+      { user: "U4", text: "next message" },
+    ];
+    const result = formatMessagesForPrompt(messages);
+    expect(result).toEqual([
+      { user: "U1", text: "parent" },
+      { user: "U2", text: "reply1" },
+      { user: "U3", text: "reply2" },
+      { user: "U4", text: "next message" },
+    ]);
+  });
 });
 
 describe("extractUserIds", () => {
@@ -249,7 +270,7 @@ describe("generateSummary", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "gpt-5-mini",
+        model: "gpt-5.2",
       }),
     );
   });
