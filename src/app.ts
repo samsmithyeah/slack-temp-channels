@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { App } from "@slack/bolt";
+import { registerAgentTaskHandlers } from "./actions/agentTask";
 import { registerBroadcastAction } from "./actions/broadcast";
 import { registerCloseAction } from "./actions/close";
 import { registerExportAction } from "./actions/export";
@@ -18,6 +19,7 @@ registerDashCommand(app);
 registerCloseAction(app);
 registerBroadcastAction(app);
 registerExportAction(app);
+registerAgentTaskHandlers(app);
 registerHomeHandlers(app);
 
 (async () => {

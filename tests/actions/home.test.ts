@@ -272,19 +272,23 @@ describe("registerHomeHandlers", () => {
       expect(actionsBlock.type).toBe("actions");
 
       const elements = actionsBlock.elements!;
-      expect(elements).toHaveLength(3);
+      expect(elements).toHaveLength(4);
+
+      // AI Agent Task button
+      expect(elements[0].action_id).toBe("home_agent_task_C_DASH1");
+      expect(elements[0].value).toBe("C_DASH1");
 
       // Export button
-      expect(elements[0].action_id).toBe("home_export_C_DASH1");
-      expect(elements[0].value).toBe("C_DASH1:-project");
+      expect(elements[1].action_id).toBe("home_export_C_DASH1");
+      expect(elements[1].value).toBe("C_DASH1:-project");
 
       // Broadcast & Close button
-      expect(elements[1].action_id).toBe("home_broadcast_close_C_DASH1");
-      expect(elements[1].value).toBe("C_DASH1");
+      expect(elements[2].action_id).toBe("home_broadcast_close_C_DASH1");
+      expect(elements[2].value).toBe("C_DASH1");
 
       // Close channel button
-      expect(elements[2].action_id).toBe("home_close_C_DASH1");
-      expect(elements[2].value).toBe("C_DASH1");
+      expect(elements[3].action_id).toBe("home_close_C_DASH1");
+      expect(elements[3].value).toBe("C_DASH1");
     });
 
     it("shows only Export button for channels the user did not create", async () => {
@@ -315,8 +319,9 @@ describe("registerHomeHandlers", () => {
       expect(sections).toHaveLength(1);
       const actionBlocks = memberBlocks.filter((b) => b.type === "actions");
       expect(actionBlocks).toHaveLength(1);
-      expect(actionBlocks[0].elements).toHaveLength(1);
-      expect(actionBlocks[0].elements![0].action_id).toBe("home_export_C_OTHER");
+      expect(actionBlocks[0].elements).toHaveLength(2);
+      expect(actionBlocks[0].elements![0].action_id).toBe("home_agent_task_C_OTHER");
+      expect(actionBlocks[0].elements![1].action_id).toBe("home_export_C_OTHER");
     });
 
     it("logs error and skips publish when teamId is missing", async () => {

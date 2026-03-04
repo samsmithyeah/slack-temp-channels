@@ -7,6 +7,7 @@ const MAX_CHARS_PER_MESSAGE = 500;
 interface ChannelMessage {
   user: string;
   text: string;
+  ts?: string;
 }
 
 const SYSTEM_PROMPT = `You are a helpful assistant that summarises Slack channel conversations.
@@ -43,6 +44,7 @@ export function resolveNamesInMessages(
   return messages.map((m) => ({
     user: userNames.get(m.user) ?? m.user,
     text: m.text.replace(USER_MENTION_REGEX, (_, id) => userNames.get(id) ?? id),
+    ...(m.ts ? { ts: m.ts } : {}),
   }));
 }
 
@@ -86,14 +88,15 @@ export function formatMessagesForPrompt(
     user?: string;
     text?: string;
     subtype?: string;
-    replies?: Array<{ user?: string; text?: string; subtype?: string }>;
+    ts?: string;
+    replies?: Array<{ user?: string; text?: string; subtype?: string; ts?: string }>;
   }>,
 ): ChannelMessage[] {
   // Flatten replies into the list right after their parent
   return rawMessages
     .flatMap((m) => [m, ...(m.replies ?? [])])
     .filter(
-      (m): m is { user: string; text: string; subtype?: string } =>
+      (m): m is { user: string; text: string; subtype?: string; ts?: string } =>
         !!m.user && !!m.text && !m.subtype,
     )
     .map((m) => ({
@@ -102,6 +105,7 @@ export function formatMessagesForPrompt(
         m.text.length > MAX_CHARS_PER_MESSAGE
           ? `${m.text.slice(0, MAX_CHARS_PER_MESSAGE - 3)}...`
           : m.text,
+      ...(m.ts ? { ts: m.ts } : {}),
     }))
     .slice(-MAX_PROMPT_MESSAGES);
 }

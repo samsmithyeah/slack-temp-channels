@@ -8,6 +8,7 @@ export const LABEL_CREATE = "Create a dash channel";
 export const LABEL_CLOSE = "Close channel";
 export const LABEL_BROADCAST_CLOSE = "Broadcast & close";
 export const LABEL_EXPORT = "Export";
+export const LABEL_AGENT_TASK = "AI Agent Task";
 
 // App Home
 export const APP_HOME_HEADING = "Dash: Temporary channels";

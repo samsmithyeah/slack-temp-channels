@@ -1,6 +1,11 @@
 import type { KnownBlock } from "@slack/types";
 import type { WebClient } from "@slack/web-api";
-import { CREATOR_MSG_TEXT, LABEL_BROADCAST_CLOSE, LABEL_CLOSE } from "./constants";
+import {
+  CREATOR_MSG_TEXT,
+  LABEL_AGENT_TASK,
+  LABEL_BROADCAST_CLOSE,
+  LABEL_CLOSE,
+} from "./constants";
 
 export function getSlackErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null) return undefined;
@@ -91,6 +96,11 @@ export function welcomeBlocks(
           text: { type: "plain_text", text: LABEL_BROADCAST_CLOSE },
           action_id: "broadcast_and_close",
           ...(originChannelId ? { value: originChannelId } : {}),
+        },
+        {
+          type: "button",
+          text: { type: "plain_text", text: LABEL_AGENT_TASK },
+          action_id: "agent_task",
         },
       ],
     },
