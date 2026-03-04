@@ -12,6 +12,7 @@ import {
 import { ApiKeyMissingError, createOpenAIClient } from "../services/openai";
 import { createPlanId, deletePlan, getPlan, type PlanData, storePlan } from "../services/planStore";
 import type { ActionBody } from "../types";
+import { isChannelMember } from "../utils";
 
 // --- Helpers ---
 
@@ -112,10 +113,13 @@ export function registerAgentTaskHandlers(app: App): void {
   app.action("agent_task", async ({ ack, body, client, logger }) => {
     const actionBody = body as unknown as ActionBody;
     const channelId = actionBody.channel?.id;
+    const userId = actionBody.user?.id;
     // Fire ack without awaiting so views.open gets the trigger_id before it
     // expires (3 s lifetime, socket mode delivery eats into that window).
     ack();
-    if (!channelId) return;
+    if (!channelId || !userId) return;
+
+    if (!(await isChannelMember(client, channelId, userId))) return;
 
     try {
       await client.views.open({
@@ -131,9 +135,12 @@ export function registerAgentTaskHandlers(app: App): void {
   app.action(/^home_agent_task_/, async ({ ack, body, client, logger }) => {
     const actionBody = body as unknown as ActionBody;
     const action = actionBody.actions?.[0];
+    const userId = actionBody.user?.id;
     ack();
-    if (action?.type !== "button" || !action?.value) return;
+    if (action?.type !== "button" || !action?.value || !userId) return;
     const channelId = action.value;
+
+    if (!(await isChannelMember(client, channelId, userId))) return;
 
     try {
       await client.views.open({
@@ -271,7 +278,7 @@ export function registerAgentTaskHandlers(app: App): void {
     const planId = actionBody.actions?.[0]?.value;
     if (!planId) return;
     const planData = getPlan(planId);
-    if (!planData) return;
+    if (!planData || actionBody.user?.id !== planData.userId) return;
 
     // Update DM to "executing..."
     try {
@@ -326,7 +333,7 @@ export function registerAgentTaskHandlers(app: App): void {
     const planId = actionBody.actions?.[0]?.value;
     if (!planId) return;
     const planData = getPlan(planId);
-    if (!planData) return;
+    if (!planData || actionBody.user?.id !== planData.userId) return;
 
     try {
       await client.chat.update({
@@ -357,7 +364,7 @@ export function registerAgentTaskHandlers(app: App): void {
     const planId = actionBody.actions?.[0]?.value;
     if (!planId) return;
     const planData = getPlan(planId);
-    if (!planData) return;
+    if (!planData || actionBody.user?.id !== planData.userId) return;
 
     try {
       await client.views.open({

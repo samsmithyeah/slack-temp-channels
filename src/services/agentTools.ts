@@ -60,8 +60,19 @@ interface ToolResult {
 
 type ToolHandler = (ctx: ToolContext, args: Record<string, string>) => Promise<ToolResult>;
 
+function validateArgs(args: Record<string, string>, required: string[]): string | undefined {
+  for (const key of required) {
+    if (typeof args[key] !== "string" || args[key].trim() === "") {
+      return `Missing or empty required argument: ${key}`;
+    }
+  }
+  return undefined;
+}
+
 const toolHandlers: Record<string, ToolHandler> = {
   reply_to_message: async (ctx, args) => {
+    const error = validateArgs(args, ["thread_ts", "text"]);
+    if (error) return { success: false, output: error };
     const result = await ctx.client.chat.postMessage({
       channel: ctx.channelId,
       thread_ts: args.thread_ts,
@@ -73,6 +84,8 @@ const toolHandlers: Record<string, ToolHandler> = {
     };
   },
   post_channel_message: async (ctx, args) => {
+    const error = validateArgs(args, ["text"]);
+    if (error) return { success: false, output: error };
     const result = await ctx.client.chat.postMessage({
       channel: ctx.channelId,
       text: args.text,
