@@ -37,3 +37,14 @@ export function getPlan(planId: string): PlanData | undefined {
 export function deletePlan(planId: string): void {
   plans.delete(planId);
 }
+
+// Proactively sweep expired entries every 10 minutes
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [id, data] of plans) {
+      if (now - data.createdAt > PLAN_TTL_MS) plans.delete(id);
+    }
+  },
+  10 * 60 * 1000,
+).unref();

@@ -134,6 +134,39 @@ function summaryBlocks(summaryText: string, userId: string): KnownBlock[] {
   ];
 }
 
+// --- Execution helper ---
+
+interface ExecuteAndNotifyParams {
+  openai: ReturnType<typeof createOpenAIClient>;
+  client: Parameters<typeof executePlan>[1];
+  channelId: string;
+  plan: AgentPlan;
+  taskDescription: string;
+  userId: string;
+  dmChannelId: string;
+}
+
+async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<void> {
+  const { openai, client, channelId, plan, taskDescription, userId, dmChannelId } = params;
+
+  const result = await executePlan(openai, client, channelId, plan, taskDescription);
+
+  const executionId = createExecutionId();
+  storeExecution({
+    id: executionId,
+    userId,
+    channelId,
+    summary: result.summary,
+    createdAt: Date.now(),
+  });
+
+  await client.chat.postMessage({
+    channel: dmChannelId,
+    text: "Agent task complete",
+    blocks: resultBlocks(result, executionId),
+  });
+}
+
 // --- Registration ---
 
 export function registerAgentTaskHandlers(app: App): void {
@@ -197,6 +230,8 @@ export function registerAgentTaskHandlers(app: App): void {
     const yoloChecked = view.state.values.yolo_mode?.yolo_mode_input?.selected_options?.length ?? 0;
     const isYolo = yoloChecked > 0;
 
+    if (!(await isChannelMember(client, channelId, userId))) return;
+
     // Open DM channel with the user
     let dmChannelId: string;
     try {
@@ -244,27 +279,14 @@ export function registerAgentTaskHandlers(app: App): void {
           ],
         });
 
-        const result = await executePlan(
-          getOpenAIClient(),
+        await executeAndNotify({
+          openai: getOpenAIClient(),
           client,
           channelId,
           plan,
           taskDescription,
-        );
-
-        const executionId = createExecutionId();
-        storeExecution({
-          id: executionId,
           userId,
-          channelId,
-          summary: result.summary,
-          createdAt: Date.now(),
-        });
-
-        await client.chat.postMessage({
-          channel: dmChannelId,
-          text: "Agent task complete",
-          blocks: resultBlocks(result, executionId),
+          dmChannelId,
         });
       } else {
         // Store plan and show approval DM
@@ -342,27 +364,14 @@ export function registerAgentTaskHandlers(app: App): void {
     }
 
     try {
-      const result = await executePlan(
-        getOpenAIClient(),
+      await executeAndNotify({
+        openai: getOpenAIClient(),
         client,
-        planData.channelId,
-        planData.plan,
-        planData.taskDescription,
-      );
-
-      const executionId = createExecutionId();
-      storeExecution({
-        id: executionId,
-        userId: planData.userId,
         channelId: planData.channelId,
-        summary: result.summary,
-        createdAt: Date.now(),
-      });
-
-      await client.chat.postMessage({
-        channel: planData.dmChannelId,
-        text: "Agent task complete",
-        blocks: resultBlocks(result, executionId),
+        plan: planData.plan,
+        taskDescription: planData.taskDescription,
+        userId: planData.userId,
+        dmChannelId: planData.dmChannelId,
       });
     } catch (error) {
       logger.error("Agent execution failed:", error);
@@ -511,12 +520,12 @@ export function registerAgentTaskHandlers(app: App): void {
   });
 
   // 9. Refine submission — re-generate plan, update same DM
-  app.view("agent_refine_submit", async ({ ack, view, client, logger }) => {
+  app.view("agent_refine_submit", async ({ ack, view, body, client, logger }) => {
     await ack();
 
     const { planId } = JSON.parse(view.private_metadata) as AgentRefineMetadata;
     const planData = getPlan(planId);
-    if (!planData) return;
+    if (!planData || body.user.id !== planData.userId) return;
 
     const refinement = view.state.values.refinement.refinement_input.value!;
 

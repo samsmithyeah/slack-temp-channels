@@ -32,3 +32,14 @@ export function getExecution(executionId: string): ExecutionData | undefined {
 export function deleteExecution(executionId: string): void {
   executions.delete(executionId);
 }
+
+// Proactively sweep expired entries every 10 minutes
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [id, data] of executions) {
+      if (now - data.createdAt > EXECUTION_TTL_MS) executions.delete(id);
+    }
+  },
+  10 * 60 * 1000,
+).unref();
