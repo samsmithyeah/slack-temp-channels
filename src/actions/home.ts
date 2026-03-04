@@ -7,6 +7,7 @@ import {
   CHANNEL_PREFIX,
   CREATOR_MSG_TEXT,
   ERR_ARCHIVE_PERMISSION,
+  LABEL_AGENT_TASK,
   LABEL_BROADCAST_CLOSE,
   LABEL_CREATE,
   LABEL_EXPORT,
@@ -161,6 +162,13 @@ function channelSectionBlocks(
     });
 
     const elements: KnownBlock[] = [];
+
+    elements.push({
+      type: "button",
+      text: { type: "plain_text", text: LABEL_AGENT_TASK },
+      action_id: `home_agent_task_${ch.id}`,
+      value: ch.id,
+    } as unknown as KnownBlock);
 
     if (showExport) {
       elements.push({
