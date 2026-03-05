@@ -83,6 +83,14 @@ export function createOpenAIClient(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
+let sharedClient: OpenAI | undefined;
+
+/** Lazy singleton — reuses a single OpenAI client across the app. */
+export function getOpenAIClient(): OpenAI {
+  sharedClient ??= createOpenAIClient();
+  return sharedClient;
+}
+
 export function formatMessagesForPrompt(
   rawMessages: Array<{
     user?: string;

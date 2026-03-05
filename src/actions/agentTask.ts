@@ -1,8 +1,10 @@
 import type { App } from "@slack/bolt";
 import type { KnownBlock } from "@slack/types";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { planBlocks, textSectionBlocks } from "../agentBlocks";
 import { type AgentRefineMetadata, agentRefineModal } from "../modals/agentRefine";
 import { type AgentTaskMetadata, agentTaskModal } from "../modals/agentTask";
+import { isUserActive, markActive, markInactive } from "../services/activeTaskTracker";
 import {
   type AgentPlan,
   type ExecutionResult,
@@ -15,76 +17,12 @@ import {
   getExecution,
   storeExecution,
 } from "../services/executionStore";
-import { ApiKeyMissingError, createOpenAIClient } from "../services/openai";
+import { ApiKeyMissingError, getOpenAIClient } from "../services/openai";
 import { createPlanId, deletePlan, getPlan, type PlanData, storePlan } from "../services/planStore";
 import type { ActionBody } from "../types";
 import { isChannelMember } from "../utils";
 
-// --- Block builders ---
-
-const SLACK_SECTION_CHAR_LIMIT = 3000;
-
-/** Split long text into multiple section blocks, each within Slack's limit. */
-function textSectionBlocks(text: string): KnownBlock[] {
-  if (text.length <= SLACK_SECTION_CHAR_LIMIT) {
-    return [{ type: "section", text: { type: "mrkdwn", text } }] as KnownBlock[];
-  }
-
-  const blocks: KnownBlock[] = [];
-  let remaining = text;
-  while (remaining.length > 0) {
-    if (remaining.length <= SLACK_SECTION_CHAR_LIMIT) {
-      blocks.push({
-        type: "section",
-        text: { type: "mrkdwn", text: remaining },
-      } as unknown as KnownBlock);
-      break;
-    }
-    // Split at the last newline before the limit
-    let splitAt = remaining.lastIndexOf("\n", SLACK_SECTION_CHAR_LIMIT);
-    if (splitAt <= 0) splitAt = SLACK_SECTION_CHAR_LIMIT;
-    blocks.push({
-      type: "section",
-      text: { type: "mrkdwn", text: remaining.slice(0, splitAt) },
-    } as unknown as KnownBlock);
-    remaining = remaining.slice(splitAt + 1);
-  }
-  return blocks;
-}
-
-function planBlocks(plan: AgentPlan, planId: string): KnownBlock[] {
-  const stepsText = plan.steps.map((s, i) => `${i + 1}. ${s.description}`).join("\n");
-
-  return [
-    ...textSectionBlocks(`*AI Agent Plan*\n\n${plan.summary}`),
-    ...(plan.steps.length > 0 ? textSectionBlocks(`*Steps:*\n${stepsText}`) : []),
-    {
-      type: "actions",
-      elements: [
-        {
-          type: "button",
-          text: { type: "plain_text", text: "Accept" },
-          style: "primary",
-          action_id: "agent_plan_accept",
-          value: planId,
-        },
-        {
-          type: "button",
-          text: { type: "plain_text", text: "Decline" },
-          style: "danger",
-          action_id: "agent_plan_decline",
-          value: planId,
-        },
-        {
-          type: "button",
-          text: { type: "plain_text", text: "Refine" },
-          action_id: "agent_plan_refine",
-          value: planId,
-        },
-      ],
-    },
-  ] as KnownBlock[];
-}
+const BUSY_TEXT = "You already have an agent task in progress. Please wait for it to finish.";
 
 function resultBlocks(result: ExecutionResult, executionId: string): KnownBlock[] {
   const detailLines = result.details.join("\n");
@@ -126,10 +64,34 @@ function summaryBlocks(summaryText: string, userId: string): KnownBlock[] {
   ];
 }
 
+const EXPIRED_TEXT = ":warning: This action has expired. Please start a new task.";
+
+/** Try to update the DM message with an expiry notice. */
+async function showExpired(
+  client: Parameters<typeof executePlan>[1],
+  body: unknown,
+  logger: { error: (...args: unknown[]) => void },
+): Promise<void> {
+  const actionBody = body as ActionBody;
+  const dmChannelId = actionBody.channel?.id;
+  const messageTs = (body as { message?: { ts?: string } }).message?.ts;
+  if (!dmChannelId || !messageTs) return;
+  try {
+    await client.chat.update({
+      channel: dmChannelId,
+      ts: messageTs,
+      text: EXPIRED_TEXT,
+      blocks: [{ type: "section", text: { type: "mrkdwn", text: EXPIRED_TEXT } }],
+    });
+  } catch (error) {
+    logger.error("Failed to show expiry notice:", error);
+  }
+}
+
 // --- Execution helper ---
 
 interface ExecuteAndNotifyParams {
-  openai: ReturnType<typeof createOpenAIClient>;
+  openai: ReturnType<typeof getOpenAIClient>;
   client: Parameters<typeof executePlan>[1];
   channelId: string;
   plan: AgentPlan;
@@ -161,6 +123,7 @@ async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<void> {
     taskDescription,
     planMessages,
     threadTs,
+    userId,
   );
 
   const executionId = createExecutionId();
@@ -182,13 +145,6 @@ async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<void> {
 // --- Registration ---
 
 export function registerAgentTaskHandlers(app: App): void {
-  let openaiClient: ReturnType<typeof createOpenAIClient> | undefined;
-
-  function getOpenAIClient() {
-    openaiClient ??= createOpenAIClient();
-    return openaiClient;
-  }
-
   // 1. Button from pinned welcome message (in-channel)
   app.action("agent_task", async ({ ack, body, client, logger }) => {
     const actionBody = body as unknown as ActionBody;
@@ -244,6 +200,18 @@ export function registerAgentTaskHandlers(app: App): void {
 
     if (!(await isChannelMember(client, channelId, userId))) return;
 
+    if (isUserActive(userId)) {
+      try {
+        const dm = await client.conversations.open({ users: userId });
+        if (dm.channel?.id) {
+          await client.chat.postMessage({ channel: dm.channel.id, text: BUSY_TEXT });
+        }
+      } catch {
+        // best-effort
+      }
+      return;
+    }
+
     // Open DM channel with the user
     let dmChannelId: string;
     try {
@@ -270,6 +238,7 @@ export function registerAgentTaskHandlers(app: App): void {
       return;
     }
 
+    markActive(userId);
     try {
       const planResult = await generatePlan(getOpenAIClient(), client, channelId, taskDescription);
       const { plan, planMessages } = planResult;
@@ -338,6 +307,8 @@ export function registerAgentTaskHandlers(app: App): void {
       } catch (updateError) {
         logger.error("Failed to update DM with error:", updateError);
       }
+    } finally {
+      markInactive(userId);
     }
   });
 
@@ -348,7 +319,19 @@ export function registerAgentTaskHandlers(app: App): void {
     const planId = actionBody.actions?.[0]?.value;
     if (!planId) return;
     const planData = getPlan(planId);
-    if (!planData || actionBody.user?.id !== planData.userId) return;
+    if (!planData || actionBody.user?.id !== planData.userId) {
+      await showExpired(client, body, logger);
+      return;
+    }
+
+    if (isUserActive(planData.userId)) {
+      try {
+        await client.chat.postMessage({ channel: planData.dmChannelId, text: BUSY_TEXT });
+      } catch {
+        // best-effort
+      }
+      return;
+    }
 
     // Update DM to "executing..."
     try {
@@ -367,6 +350,7 @@ export function registerAgentTaskHandlers(app: App): void {
       logger.error("Failed to update DM to executing state:", error);
     }
 
+    markActive(planData.userId);
     try {
       await executeAndNotify({
         openai: getOpenAIClient(),
@@ -382,13 +366,25 @@ export function registerAgentTaskHandlers(app: App): void {
     } catch (error) {
       logger.error("Agent execution failed:", error);
       try {
-        await client.chat.postMessage({
+        await client.chat.update({
           channel: planData.dmChannelId,
+          ts: planData.dmMessageTs,
           text: "Execution failed. Please try again.",
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: ":x: Execution failed. Please try again.",
+              },
+            },
+          ],
         });
-      } catch (dmError) {
-        logger.error("Failed to send execution error DM:", dmError);
+      } catch (updateError) {
+        logger.error("Failed to update DM with execution error:", updateError);
       }
+    } finally {
+      markInactive(planData.userId);
     }
 
     deletePlan(planId);
@@ -401,7 +397,10 @@ export function registerAgentTaskHandlers(app: App): void {
     const planId = actionBody.actions?.[0]?.value;
     if (!planId) return;
     const planData = getPlan(planId);
-    if (!planData || actionBody.user?.id !== planData.userId) return;
+    if (!planData || actionBody.user?.id !== planData.userId) {
+      await showExpired(client, body, logger);
+      return;
+    }
 
     try {
       await client.chat.update({
@@ -432,7 +431,10 @@ export function registerAgentTaskHandlers(app: App): void {
     const planId = actionBody.actions?.[0]?.value;
     if (!planId) return;
     const planData = getPlan(planId);
-    if (!planData || actionBody.user?.id !== planData.userId) return;
+    if (!planData || actionBody.user?.id !== planData.userId) {
+      await showExpired(client, body, logger);
+      return;
+    }
 
     try {
       await client.views.open({
@@ -451,7 +453,10 @@ export function registerAgentTaskHandlers(app: App): void {
     const executionId = actionBody.actions?.[0]?.value;
     if (!executionId) return;
     const exec = getExecution(executionId);
-    if (!exec || actionBody.user?.id !== exec.userId) return;
+    if (!exec || actionBody.user?.id !== exec.userId) {
+      await showExpired(client, body, logger);
+      return;
+    }
 
     try {
       await client.chat.postMessage({
@@ -497,7 +502,10 @@ export function registerAgentTaskHandlers(app: App): void {
     const executionId = actionBody.actions?.[0]?.value;
     if (!executionId) return;
     const exec = getExecution(executionId);
-    if (!exec || actionBody.user?.id !== exec.userId) return;
+    if (!exec || actionBody.user?.id !== exec.userId) {
+      await showExpired(client, body, logger);
+      return;
+    }
 
     const dmChannelId = actionBody.channel?.id;
     const messageTs = (body as unknown as { message?: { ts?: string } }).message?.ts;
@@ -535,6 +543,15 @@ export function registerAgentTaskHandlers(app: App): void {
 
     const refinement = view.state.values.refinement.refinement_input.value!;
 
+    if (isUserActive(planData.userId)) {
+      try {
+        await client.chat.postMessage({ channel: planData.dmChannelId, text: BUSY_TEXT });
+      } catch {
+        // best-effort
+      }
+      return;
+    }
+
     // Update DM to loading state
     try {
       await client.chat.update({
@@ -555,6 +572,7 @@ export function registerAgentTaskHandlers(app: App): void {
       logger.error("Failed to update DM to loading state:", error);
     }
 
+    markActive(planData.userId);
     try {
       const planResult = await generatePlan(
         getOpenAIClient(),
@@ -589,6 +607,8 @@ export function registerAgentTaskHandlers(app: App): void {
       } catch (updateError) {
         logger.error("Failed to update DM with refine error:", updateError);
       }
+    } finally {
+      markInactive(planData.userId);
     }
   });
 }

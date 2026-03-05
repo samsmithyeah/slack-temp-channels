@@ -237,8 +237,9 @@ export async function executePlan(
   taskDescription: string,
   planMessages?: ChatCompletionMessageParam[],
   threadTs?: string,
+  userId?: string,
 ): Promise<ExecutionResult> {
-  const toolCtx: ToolContext = { client, channelId };
+  const toolCtx: ToolContext = { client, channelId, userId };
   const result: ExecutionResult = {
     stepsCompleted: 0,
     stepsFailed: 0,

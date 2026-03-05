@@ -153,6 +153,7 @@ export const ALL_TOOLS: ChatCompletionTool[] = [...READ_TOOLS, ...WRITE_TOOLS];
 export interface ToolContext {
   client: WebClient;
   channelId: string;
+  userId?: string;
 }
 
 interface ToolResult {
@@ -202,6 +203,16 @@ interface SlackMessage {
   ts?: string;
   subtype?: string;
   reply_count?: number;
+}
+
+function messageBlocksWithAttribution(text: string, userId: string) {
+  return [
+    { type: "section", text: { type: "mrkdwn", text } },
+    {
+      type: "context",
+      elements: [{ type: "mrkdwn", text: `AI agent task triggered by <@${userId}>` }],
+    },
+  ];
 }
 
 const toolHandlers: Record<string, ToolHandler> = {
@@ -287,6 +298,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       channel: ctx.channelId,
       thread_ts: args.thread_ts as string,
       text: args.text as string,
+      ...(ctx.userId && { blocks: messageBlocksWithAttribution(args.text as string, ctx.userId) }),
     });
     return {
       success: result.ok === true,
@@ -300,6 +312,7 @@ const toolHandlers: Record<string, ToolHandler> = {
     const result = await ctx.client.chat.postMessage({
       channel: ctx.channelId,
       text: args.text as string,
+      ...(ctx.userId && { blocks: messageBlocksWithAttribution(args.text as string, ctx.userId) }),
     });
     return {
       success: result.ok === true,
