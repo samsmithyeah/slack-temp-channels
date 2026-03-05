@@ -41,8 +41,7 @@ const readThreadTool: ChatCompletionTool = {
   type: "function",
   function: {
     name: "read_thread",
-    description:
-      "Read all replies in a specific message thread. Returns the parent message and all replies with timestamps, authors, and text.",
+    description: `Read replies in a specific message thread. Returns the parent message and up to ${MAX_READ_LIMIT} replies with timestamps, authors, and text.`,
     parameters: {
       type: "object",
       properties: {

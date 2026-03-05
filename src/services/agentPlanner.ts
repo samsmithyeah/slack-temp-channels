@@ -122,7 +122,7 @@ export async function generatePlan(
 
   let userPrompt = `<task>${sanitizeForPrompt(taskDescription)}</task>`;
   if (threadTs) {
-    userPrompt += `\n\n<thread_scope>This task is scoped to the thread starting at timestamp ${threadTs}. Use read_thread with this timestamp first to get the relevant context.</thread_scope>`;
+    userPrompt += `\n\n<thread_scope>This task is scoped to the thread starting at timestamp ${sanitizeForPrompt(threadTs)}. Use read_thread with this timestamp first to get the relevant context.</thread_scope>`;
   }
   if (refinement) {
     userPrompt += `\n\n<refinement>${sanitizeForPrompt(refinement)}</refinement>`;
@@ -247,16 +247,16 @@ export async function executePlan(
     summary: "",
   };
 
-  const stepsText = plan.steps
-    .map((s, i) => `${i + 1}. ${s.description} (tool: ${s.toolName})`)
-    .join("\n");
+  const stepsText = sanitizeForPrompt(
+    plan.steps.map((s, i) => `${i + 1}. ${s.description} (tool: ${s.toolName})`).join("\n"),
+  );
 
   let messages: ChatCompletionMessageParam[];
 
   if (planMessages) {
     // Carry forward planning context, then switch to execution mode
     const threadNote = threadTs
-      ? `\nThis task is scoped to the thread at timestamp ${threadTs}.`
+      ? `\nThis task is scoped to the thread at timestamp ${sanitizeForPrompt(threadTs)}.`
       : "";
 
     messages = [
@@ -273,7 +273,7 @@ export async function executePlan(
   } else {
     // Fresh start — agent will need to read context itself
     const threadNote = threadTs
-      ? `\nThis task is scoped to the thread at timestamp ${threadTs}. Use read_thread with this timestamp to get context.`
+      ? `\nThis task is scoped to the thread at timestamp ${sanitizeForPrompt(threadTs)}. Use read_thread with this timestamp to get context.`
       : "";
 
     messages = [
