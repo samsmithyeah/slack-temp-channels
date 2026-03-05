@@ -6,6 +6,7 @@ import { registerCloseAction } from "./actions/close";
 import { registerExportAction } from "./actions/export";
 import { registerHomeHandlers } from "./actions/home";
 import { registerDashCommand } from "./commands/dash";
+import { registerAppMentionHandler } from "./events/appMention";
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -20,6 +21,7 @@ registerCloseAction(app);
 registerBroadcastAction(app);
 registerExportAction(app);
 registerAgentTaskHandlers(app);
+registerAppMentionHandler(app);
 registerHomeHandlers(app);
 
 (async () => {

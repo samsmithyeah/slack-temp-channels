@@ -1,5 +1,6 @@
 import type { App } from "@slack/bolt";
 import type { KnownBlock } from "@slack/types";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { type AgentRefineMetadata, agentRefineModal } from "../modals/agentRefine";
 import { type AgentTaskMetadata, agentTaskModal } from "../modals/agentTask";
 import {
@@ -7,7 +8,6 @@ import {
   type ExecutionResult,
   executePlan,
   generatePlan,
-  type PlanResult,
 } from "../services/agentPlanner";
 import {
   createExecutionId,
@@ -19,14 +19,6 @@ import { ApiKeyMissingError, createOpenAIClient } from "../services/openai";
 import { createPlanId, deletePlan, getPlan, type PlanData, storePlan } from "../services/planStore";
 import type { ActionBody } from "../types";
 import { isChannelMember } from "../utils";
-
-// --- Helpers ---
-
-function truncationWarning(result: PlanResult): string {
-  if (result.totalMessages <= result.includedMessages) return "";
-  const skipped = result.totalMessages - result.includedMessages;
-  return `\n\n:warning: _${skipped} older message${skipped === 1 ? " was" : "s were"} not included due to conversation length. The agent only saw the most recent ${result.includedMessages} messages._`;
-}
 
 // --- Block builders ---
 
@@ -144,12 +136,32 @@ interface ExecuteAndNotifyParams {
   taskDescription: string;
   userId: string;
   dmChannelId: string;
+  planMessages?: ChatCompletionMessageParam[];
+  threadTs?: string;
 }
 
 async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<void> {
-  const { openai, client, channelId, plan, taskDescription, userId, dmChannelId } = params;
+  const {
+    openai,
+    client,
+    channelId,
+    plan,
+    taskDescription,
+    userId,
+    dmChannelId,
+    planMessages,
+    threadTs,
+  } = params;
 
-  const result = await executePlan(openai, client, channelId, plan, taskDescription);
+  const result = await executePlan(
+    openai,
+    client,
+    channelId,
+    plan,
+    taskDescription,
+    planMessages,
+    threadTs,
+  );
 
   const executionId = createExecutionId();
   storeExecution({
@@ -260,8 +272,7 @@ export function registerAgentTaskHandlers(app: App): void {
 
     try {
       const planResult = await generatePlan(getOpenAIClient(), client, channelId, taskDescription);
-      const { plan } = planResult;
-      const warning = truncationWarning(planResult);
+      const { plan, planMessages } = planResult;
 
       if (isYolo) {
         await client.chat.update({
@@ -273,7 +284,7 @@ export function registerAgentTaskHandlers(app: App): void {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `:rocket: *YOLO mode* — executing plan immediately\n\n${plan.summary}${warning}`,
+                text: `:rocket: *YOLO mode* — executing plan immediately\n\n${plan.summary}`,
               },
             },
           ],
@@ -287,6 +298,7 @@ export function registerAgentTaskHandlers(app: App): void {
           taskDescription,
           userId,
           dmChannelId,
+          planMessages,
         });
       } else {
         // Store plan and show approval DM
@@ -297,26 +309,18 @@ export function registerAgentTaskHandlers(app: App): void {
           channelId,
           taskDescription,
           plan,
+          planMessages,
           dmChannelId,
           dmMessageTs: statusMsg.ts!,
           createdAt: Date.now(),
         };
         storePlan(planData);
 
-        const warningBlocks: KnownBlock[] = warning
-          ? [
-              {
-                type: "context",
-                elements: [{ type: "mrkdwn", text: warning.trim() }],
-              } as unknown as KnownBlock,
-            ]
-          : [];
-
         await client.chat.update({
           channel: dmChannelId,
           ts: statusMsg.ts!,
           text: `Plan: ${plan.summary}`,
-          blocks: [...planBlocks(plan, planId), ...warningBlocks],
+          blocks: planBlocks(plan, planId),
         });
       }
     } catch (error) {
@@ -372,6 +376,8 @@ export function registerAgentTaskHandlers(app: App): void {
         taskDescription: planData.taskDescription,
         userId: planData.userId,
         dmChannelId: planData.dmChannelId,
+        planMessages: planData.planMessages,
+        threadTs: planData.threadTs,
       });
     } catch (error) {
       logger.error("Agent execution failed:", error);
@@ -556,29 +562,21 @@ export function registerAgentTaskHandlers(app: App): void {
         planData.channelId,
         planData.taskDescription,
         refinement,
+        planData.threadTs,
       );
-      const { plan: newPlan } = planResult;
-      const warning = truncationWarning(planResult);
+      const { plan: newPlan, planMessages: newPlanMessages } = planResult;
 
       // Update stored plan in place
       planData.plan = newPlan;
+      planData.planMessages = newPlanMessages;
       storePlan(planData);
-
-      const warningBlocks: KnownBlock[] = warning
-        ? [
-            {
-              type: "context",
-              elements: [{ type: "mrkdwn", text: warning.trim() }],
-            } as unknown as KnownBlock,
-          ]
-        : [];
 
       // Update same DM message with new plan
       await client.chat.update({
         channel: planData.dmChannelId,
         ts: planData.dmMessageTs,
         text: `Revised plan: ${newPlan.summary}`,
-        blocks: [...planBlocks(newPlan, planId), ...warningBlocks],
+        blocks: planBlocks(newPlan, planId),
       });
     } catch (error) {
       logger.error("Failed to refine plan:", error);
