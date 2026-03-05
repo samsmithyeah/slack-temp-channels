@@ -1,3 +1,4 @@
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { AgentPlan } from "./agentPlanner";
 
 export interface PlanData {
@@ -6,6 +7,8 @@ export interface PlanData {
   channelId: string;
   taskDescription: string;
   plan: AgentPlan;
+  planMessages?: ChatCompletionMessageParam[];
+  threadTs?: string;
   dmChannelId: string;
   dmMessageTs: string;
   createdAt: number;
