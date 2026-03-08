@@ -12,6 +12,11 @@ import {
   generatePlan,
 } from "../services/agentPlanner";
 import {
+  fetchChannelMessages,
+  formatTranscript,
+  resolveUserNames,
+} from "../services/channelHistory";
+import {
   createExecutionId,
   deleteExecution,
   getExecution,
@@ -195,8 +200,10 @@ export function registerAgentTaskHandlers(app: App): void {
     const userId = body.user.id;
     const { channelId } = JSON.parse(view.private_metadata) as AgentTaskMetadata;
     const taskDescription = view.state.values.task_description.task_description_input.value!;
-    const yoloChecked = view.state.values.yolo_mode?.yolo_mode_input?.selected_options?.length ?? 0;
-    const isYolo = yoloChecked > 0;
+    const selectedOptions =
+      view.state.values.options?.options_input?.selected_options?.map((o) => o.value) ?? [];
+    const isYolo = selectedOptions.includes("yolo");
+    const includeTranscript = selectedOptions.includes("include_transcript");
 
     if (!(await isChannelMember(client, channelId, userId))) return;
 
@@ -240,7 +247,25 @@ export function registerAgentTaskHandlers(app: App): void {
 
     markActive(userId);
     try {
-      const planResult = await generatePlan(getOpenAIClient(), client, channelId, taskDescription);
+      let transcriptContext: string | undefined;
+      if (includeTranscript) {
+        const messages = await fetchChannelMessages(client, channelId);
+        const userIds = [...new Set(messages.map((m) => m.user).filter(Boolean))] as string[];
+        const userNames = await resolveUserNames(client, userIds);
+        const info = await client.conversations.info({ channel: channelId });
+        const channelName = (info.channel as { name?: string })?.name ?? channelId;
+        transcriptContext = formatTranscript(channelName, messages, userNames);
+      }
+
+      const planResult = await generatePlan(
+        getOpenAIClient(),
+        client,
+        channelId,
+        taskDescription,
+        undefined,
+        undefined,
+        transcriptContext,
+      );
       const { plan, planMessages } = planResult;
 
       if (isYolo) {
@@ -279,6 +304,7 @@ export function registerAgentTaskHandlers(app: App): void {
           taskDescription,
           plan,
           planMessages,
+          transcriptContext,
           dmChannelId,
           dmMessageTs: statusMsg.ts!,
           createdAt: Date.now(),
@@ -582,6 +608,7 @@ export function registerAgentTaskHandlers(app: App): void {
         planData.taskDescription,
         refinement,
         planData.threadTs,
+        planData.transcriptContext,
       );
       const { plan: newPlan, planMessages: newPlanMessages } = planResult;
 

@@ -32,17 +32,24 @@ export function agentTaskModal(channelId: string): View {
       },
       {
         type: "input",
-        block_id: "yolo_mode",
-        label: { type: "plain_text", text: "Execution mode" },
+        block_id: "options",
+        label: { type: "plain_text", text: "Options" },
         optional: true,
         element: {
           type: "checkboxes",
-          action_id: "yolo_mode_input",
+          action_id: "options_input",
           options: [
             {
               text: {
                 type: "plain_text",
-                text: "YOLO mode — skip approval and execute immediately",
+                text: "Include full channel transcript in the initial prompt",
+              },
+              value: "include_transcript",
+            },
+            {
+              text: {
+                type: "plain_text",
+                text: "YOLO mode (skip approval and execute immediately)",
               },
               value: "yolo",
             },

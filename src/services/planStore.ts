@@ -8,6 +8,7 @@ export interface PlanData {
   taskDescription: string;
   plan: AgentPlan;
   planMessages?: ChatCompletionMessageParam[];
+  transcriptContext?: string;
   threadTs?: string;
   dmChannelId: string;
   dmMessageTs: string;

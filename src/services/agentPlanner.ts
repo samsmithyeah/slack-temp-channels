@@ -32,10 +32,12 @@ export interface ExecutionResult {
 // --- Plan generation ---
 
 const PLAN_SYSTEM_PROMPT = `You are a task-planning agent for Slack channels.
-You will receive a user-defined task. Use the read_channel_history and read_thread tools to discover the conversation context you need.
+You will receive a user-defined task.
 
-Strategy:
-1. First call read_channel_history to see recent messages
+If a <conversation> block is provided, it contains the full channel transcript including threaded replies. Use it as your primary context and call submit_plan directly — do NOT call read_channel_history or read_thread unless the conversation block is missing specific information you need.
+
+Otherwise, discover context yourself:
+1. Call read_channel_history to see recent messages
 2. If any messages have threads relevant to the task, call read_thread to inspect them
 3. Once you have enough context, call submit_plan with your structured plan
 
@@ -117,12 +119,16 @@ export async function generatePlan(
   taskDescription: string,
   refinement?: string,
   threadTs?: string,
+  transcriptContext?: string,
 ): Promise<PlanResult> {
   const toolCtx: ToolContext = { client, channelId };
 
   let userPrompt = `<task>${sanitizeForPrompt(taskDescription)}</task>`;
   if (threadTs) {
     userPrompt += `\n\n<thread_scope>This task is scoped to the thread starting at timestamp ${sanitizeForPrompt(threadTs)}. Use read_thread with this timestamp first to get the relevant context.</thread_scope>`;
+  }
+  if (transcriptContext) {
+    userPrompt += `\n\n<conversation>\n${sanitizeForPrompt(transcriptContext)}\n</conversation>`;
   }
   if (refinement) {
     userPrompt += `\n\n<refinement>${sanitizeForPrompt(refinement)}</refinement>`;
