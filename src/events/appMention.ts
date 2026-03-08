@@ -124,6 +124,12 @@ export function registerAppMentionHandler(app: App): void {
           channel: dmChannelId,
           ts: statusMsg.ts!,
           text: errorMessage,
+          blocks: [
+            {
+              type: "section",
+              text: { type: "mrkdwn", text: `:x: ${errorMessage}` },
+            },
+          ],
         });
       } catch (updateError) {
         logger.error("Failed to update DM with error:", updateError);

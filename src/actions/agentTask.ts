@@ -350,6 +350,11 @@ export function registerAgentTaskHandlers(app: App): void {
       return;
     }
 
+    if (!(await isChannelMember(client, planData.channelId, planData.userId))) {
+      deletePlan(planId);
+      return;
+    }
+
     if (isUserActive(planData.userId)) {
       try {
         await client.chat.postMessage({ channel: planData.dmChannelId, text: BUSY_TEXT });
@@ -482,6 +487,11 @@ export function registerAgentTaskHandlers(app: App): void {
     const exec = getExecution(executionId);
     if (!exec || actionBody.user?.id !== exec.userId) {
       await showExpired(client, body, logger);
+      return;
+    }
+
+    if (!(await isChannelMember(client, exec.channelId, exec.userId))) {
+      deleteExecution(executionId);
       return;
     }
 

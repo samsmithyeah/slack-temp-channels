@@ -204,6 +204,17 @@ interface SlackMessage {
   reply_count?: number;
 }
 
+/** Strip broadcast mentions and deceptive link labels from LLM-generated text. */
+function sanitizeSlackOutput(text: string): string {
+  return (
+    text
+      // Strip special mentions: <!here>, <!channel>, <!everyone>, <!subteam^...>
+      .replace(/<!(?:here|channel|everyone|subteam\^[A-Z0-9]+)(?:\|[^>]*)?>/g, "")
+      // Remove display-text overrides from links to prevent phishing: <url|fake label> → <url>
+      .replace(/<(https?:\/\/[^|>]+)\|[^>]+>/g, "<$1>")
+  );
+}
+
 function messageBlocksWithAttribution(text: string, userId: string) {
   return [
     { type: "section", text: { type: "mrkdwn", text } },
@@ -293,11 +304,12 @@ const toolHandlers: Record<string, ToolHandler> = {
   reply_to_message: async (ctx, args) => {
     const error = validateStringArgs(args, ["thread_ts", "text"]);
     if (error) return { success: false, output: error };
+    const safeText = sanitizeSlackOutput(args.text as string);
     const result = await ctx.client.chat.postMessage({
       channel: ctx.channelId,
       thread_ts: args.thread_ts as string,
-      text: args.text as string,
-      ...(ctx.userId && { blocks: messageBlocksWithAttribution(args.text as string, ctx.userId) }),
+      text: safeText,
+      ...(ctx.userId && { blocks: messageBlocksWithAttribution(safeText, ctx.userId) }),
     });
     return {
       success: result.ok === true,
@@ -308,10 +320,11 @@ const toolHandlers: Record<string, ToolHandler> = {
   post_channel_message: async (ctx, args) => {
     const error = validateStringArgs(args, ["text"]);
     if (error) return { success: false, output: error };
+    const safeText = sanitizeSlackOutput(args.text as string);
     const result = await ctx.client.chat.postMessage({
       channel: ctx.channelId,
-      text: args.text as string,
-      ...(ctx.userId && { blocks: messageBlocksWithAttribution(args.text as string, ctx.userId) }),
+      text: safeText,
+      ...(ctx.userId && { blocks: messageBlocksWithAttribution(safeText, ctx.userId) }),
     });
     return {
       success: result.ok === true,
