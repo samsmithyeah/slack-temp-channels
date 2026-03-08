@@ -365,17 +365,18 @@ export function registerAgentTaskHandlers(app: App): void {
       });
     } catch (error) {
       logger.error("Agent execution failed:", error);
+      const reason = error instanceof Error ? error.message : "unknown error";
       try {
         await client.chat.update({
           channel: planData.dmChannelId,
           ts: planData.dmMessageTs,
-          text: "Execution failed. Please try again.",
+          text: `Execution failed: ${reason}`,
           blocks: [
             {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: ":x: Execution failed. Please try again.",
+                text: `:x: Execution failed: ${reason}. Please try again.`,
               },
             },
           ],

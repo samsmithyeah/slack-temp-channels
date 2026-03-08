@@ -164,8 +164,8 @@ export async function generatePlan(
         try {
           const parsed = JSON.parse(message.content) as Record<string, unknown>;
           plan = parsePlanFromArgs(parsed);
-        } catch {
-          // Not JSON — treat as an error
+        } catch (parseError) {
+          console.warn("Agent returned non-JSON content:", parseError);
         }
       }
       break;
