@@ -37,13 +37,14 @@
         "users:read",
         "groups:read",
         "files:write",
-        "im:write"
+        "im:write",
+        "app_mentions:read"
       ]
     }
   },
   "settings": {
     "event_subscriptions": {
-      "bot_events": ["app_home_opened"]
+      "bot_events": ["app_home_opened", "app_mention"]
     },
     "interactivity": {
       "is_enabled": true
