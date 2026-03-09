@@ -47,8 +47,8 @@ describe("read_channel_history", () => {
 
     const result = await executeTool("read_channel_history", ctx, {});
     expect(result.success).toBe(true);
-    expect(result.output).toContain("Bob: First message");
-    expect(result.output).toContain("Alice: Second message");
+    expect(result.output).toContain("Bob (<@U2>): First message");
+    expect(result.output).toContain("Alice (<@U1>): Second message");
     expect(result.output.indexOf("First message")).toBeLessThan(
       result.output.indexOf("Second message"),
     );
@@ -127,10 +127,10 @@ describe("read_thread", () => {
 
     const result = await executeTool("read_thread", ctx, { thread_ts: "1000.1" });
     expect(result.success).toBe(true);
-    expect(result.output).toContain("Alice: Parent message");
+    expect(result.output).toContain("Alice (<@U1>): Parent message");
     // Reply should be indented
     expect(result.output).toContain("↳");
-    expect(result.output).toContain("Bob: Reply");
+    expect(result.output).toContain("Bob (<@U2>): Reply");
   });
 
   it("rejects missing thread_ts", async () => {

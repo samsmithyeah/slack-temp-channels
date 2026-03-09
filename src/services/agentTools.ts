@@ -1,4 +1,4 @@
-import type { WebClient } from "@slack/web-api";
+import type { ConversationsHistoryArguments, WebClient } from "@slack/web-api";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { resolveUserNames } from "./channelHistory";
 
@@ -181,10 +181,11 @@ function formatLine(
   userNames: Map<string, string>,
   replyCount?: number,
 ): string {
-  const name = user ? (userNames.get(user) ?? user) : "Unknown";
+  const displayName = user ? (userNames.get(user) ?? user) : "Unknown";
+  const nameLabel = user ? `${displayName} (<@${user}>)` : "Unknown";
   const sanitized = (text ?? "").replace(/\n/g, " ");
   const threadNote = replyCount && replyCount > 0 ? ` [${replyCount} replies]` : "";
-  return `[ts:${ts ?? "unknown"}] ${name}: ${sanitized}${threadNote}`;
+  return `[ts:${ts ?? "unknown"}] ${nameLabel}: ${sanitized}${threadNote}`;
 }
 
 /** Truncate output text to MAX_READ_OUTPUT_CHARS, dropping oldest lines first. */
@@ -205,7 +206,7 @@ interface SlackMessage {
 }
 
 /** Strip broadcast mentions and deceptive link labels from LLM-generated text. */
-function sanitizeSlackOutput(text: string): string {
+export function sanitizeSlackOutput(text: string): string {
   return (
     text
       // Strip special mentions: <!here>, <!channel>, <!everyone>, <!subteam^...>
@@ -234,16 +235,14 @@ const toolHandlers: Record<string, ToolHandler> = {
       MAX_READ_LIMIT,
     );
 
-    const historyArgs: Record<string, unknown> = {
+    const historyArgs: ConversationsHistoryArguments = {
       channel: ctx.channelId,
       limit,
     };
     if (typeof args.oldest === "string" && args.oldest) historyArgs.oldest = args.oldest;
     if (typeof args.latest === "string" && args.latest) historyArgs.latest = args.latest;
 
-    const result = await ctx.client.conversations.history(
-      historyArgs as unknown as Parameters<typeof ctx.client.conversations.history>[0],
-    );
+    const result = await ctx.client.conversations.history(historyArgs);
     const messages = (result.messages ?? []) as SlackMessage[];
 
     // Reverse to chronological order (API returns newest-first)

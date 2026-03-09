@@ -1,5 +1,6 @@
 import type { KnownBlock } from "@slack/types";
 import type { AgentPlan } from "./services/agentPlanner";
+import { sanitizeSlackOutput } from "./services/agentTools";
 
 const SLACK_SECTION_CHAR_LIMIT = 3000;
 
@@ -32,10 +33,12 @@ export function textSectionBlocks(text: string): KnownBlock[] {
 }
 
 export function planBlocks(plan: AgentPlan, planId: string): KnownBlock[] {
-  const stepsText = plan.steps.map((s, i) => `${i + 1}. ${s.description}`).join("\n");
+  const stepsText = plan.steps
+    .map((s, i) => `${i + 1}. ${sanitizeSlackOutput(s.description)}`)
+    .join("\n");
 
   return [
-    ...textSectionBlocks(`*AI Agent Plan*\n\n${plan.summary}`),
+    ...textSectionBlocks(`*AI Agent Plan*\n\n${sanitizeSlackOutput(plan.summary)}`),
     ...(plan.steps.length > 0 ? textSectionBlocks(`*Steps:*\n${stepsText}`) : []),
     {
       type: "actions",
