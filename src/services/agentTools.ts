@@ -1,5 +1,6 @@
 import type { ConversationsHistoryArguments, WebClient } from "@slack/web-api";
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
+import { textSectionBlocks } from "../agentBlocks";
 import { resolveUserNames } from "./channelHistory";
 
 // --- Constants ---
@@ -218,7 +219,7 @@ export function sanitizeSlackOutput(text: string): string {
 
 function messageBlocksWithAttribution(text: string, userId: string) {
   return [
-    { type: "section", text: { type: "mrkdwn", text } },
+    ...textSectionBlocks(text),
     {
       type: "context",
       elements: [{ type: "mrkdwn", text: `AI agent task triggered by <@${userId}>` }],
