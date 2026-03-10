@@ -11,6 +11,7 @@ import {
   executePlan,
   generatePlan,
 } from "../services/agentPlanner";
+import { sanitizeSlackOutput } from "../services/agentTools";
 import {
   fetchChannelMessages,
   formatTranscript,
@@ -29,11 +30,12 @@ import { isChannelMember } from "../utils";
 
 const BUSY_TEXT = "You already have an agent task in progress. Please wait for it to finish.";
 
-function resultBlocks(result: ExecutionResult, executionId: string): KnownBlock[] {
-  const detailLines = result.details.join("\n");
-  const failed = result.stepsFailed > 0 && result.stepsCompleted === 0;
+function resultBlocks(result: ExecutionResult, executionId: string, failed: boolean): KnownBlock[] {
+  const detailLines = sanitizeSlackOutput(result.details.join("\n"));
   const heading = failed ? "Agent task failed" : "Agent task complete";
-  const summaryText = result.summary || (failed ? "Agent task failed." : "Agent task completed.");
+  const summaryText = sanitizeSlackOutput(
+    result.summary || (failed ? "Agent task failed." : "Agent task completed."),
+  );
 
   return [
     ...textSectionBlocks(`*${heading}*\n\n${summaryText}`),
@@ -146,7 +148,7 @@ async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<void> {
   await client.chat.postMessage({
     channel: dmChannelId,
     text: failed ? "Agent task failed" : "Agent task complete",
-    blocks: resultBlocks(result, executionId),
+    blocks: resultBlocks(result, executionId, failed),
   });
 }
 
