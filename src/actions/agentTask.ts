@@ -11,6 +11,7 @@ import {
   executePlan,
   generatePlan,
 } from "../services/agentPlanner";
+import { sanitizeSlackOutput } from "../services/agentTools";
 import {
   fetchChannelMessages,
   formatTranscript,
@@ -29,12 +30,13 @@ import { isChannelMember } from "../utils";
 
 const BUSY_TEXT = "You already have an agent task in progress. Please wait for it to finish.";
 
-function resultBlocks(result: ExecutionResult, executionId: string): KnownBlock[] {
-  const detailLines = result.details.join("\n");
-  const summaryText = result.summary || "Agent task completed.";
+function resultBlocks(result: ExecutionResult, executionId: string, failed: boolean): KnownBlock[] {
+  const detailLines = sanitizeSlackOutput(result.details.join("\n"));
+  const heading = failed ? "Agent task failed" : "Agent task complete";
+  const summaryText = sanitizeSlackOutput(result.summary || "");
 
   return [
-    ...textSectionBlocks(`*Agent task complete*\n\n${summaryText}`),
+    ...textSectionBlocks(`*${heading}*${summaryText ? `\n\n${summaryText}` : ""}`),
     ...textSectionBlocks(
       `*Details:* ${result.stepsCompleted} steps completed, ${result.stepsFailed} failed${detailLines ? `\n${detailLines}` : ""}`,
     ),
@@ -140,10 +142,11 @@ async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<void> {
     createdAt: Date.now(),
   });
 
+  const failed = result.stepsFailed > 0 && result.stepsCompleted === 0;
   await client.chat.postMessage({
     channel: dmChannelId,
-    text: "Agent task complete",
-    blocks: resultBlocks(result, executionId),
+    text: failed ? "Agent task failed" : "Agent task complete",
+    blocks: resultBlocks(result, executionId, failed),
   });
 }
 
