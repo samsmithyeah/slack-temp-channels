@@ -33,12 +33,10 @@ const BUSY_TEXT = "You already have an agent task in progress. Please wait for i
 function resultBlocks(result: ExecutionResult, executionId: string, failed: boolean): KnownBlock[] {
   const detailLines = sanitizeSlackOutput(result.details.join("\n"));
   const heading = failed ? "Agent task failed" : "Agent task complete";
-  const summaryText = sanitizeSlackOutput(
-    result.summary || (failed ? "Agent task failed." : "Agent task completed."),
-  );
+  const summaryText = sanitizeSlackOutput(result.summary || "");
 
   return [
-    ...textSectionBlocks(`*${heading}*\n\n${summaryText}`),
+    ...textSectionBlocks(`*${heading}*${summaryText ? `\n\n${summaryText}` : ""}`),
     ...textSectionBlocks(
       `*Details:* ${result.stepsCompleted} steps completed, ${result.stepsFailed} failed${detailLines ? `\n${detailLines}` : ""}`,
     ),
