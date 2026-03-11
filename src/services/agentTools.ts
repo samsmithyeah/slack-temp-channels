@@ -368,6 +368,16 @@ const toolHandlers: Record<string, ToolHandler> = {
       if (msg.includes("cant_update_message")) {
         return { success: false, output: "Cannot edit: the bot can only edit its own messages" };
       }
+      if (msg.includes("msg_too_long")) {
+        return {
+          success: false,
+          output:
+            "Cannot edit: the updated message is too long. Try shortening the content or splitting it across multiple messages.",
+        };
+      }
+      if (msg.includes("message_not_found")) {
+        return { success: false, output: "Cannot edit: message not found. Check the timestamp." };
+      }
       throw e;
     }
   },
