@@ -174,7 +174,13 @@ export async function generatePlan(
           console.warn("Agent returned non-JSON content:", parseError);
         }
       }
-      break;
+      if (plan) break;
+      // Nudge the model to use the submit_plan tool instead of replying with text
+      messages.push({
+        role: "user",
+        content: "Please respond using the submit_plan tool instead of plain text.",
+      });
+      continue;
     }
 
     for (const toolCall of message.tool_calls) {
