@@ -98,6 +98,33 @@ const postChannelMessageTool: ChatCompletionTool = {
   },
 };
 
+const editMessageTool: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "edit_message",
+    description: "Edit a message that was previously posted by the bot in the channel",
+    parameters: {
+      type: "object",
+      properties: {
+        message_ts: {
+          type: "string",
+          description: "The timestamp of the message to edit (must be a message posted by the bot)",
+        },
+        text: {
+          type: "string",
+          description: "The new message text (supports Slack mrkdwn formatting)",
+        },
+      },
+      required: ["message_ts", "text"],
+    },
+  },
+};
+
+/** Write tool names used in submit_plan enum and execution step counting. */
+export const WRITE_TOOL_NAMES = [replyToMessageTool, postChannelMessageTool, editMessageTool].map(
+  (t) => t.function.name,
+);
+
 // --- submit_plan tool definition (used during planning only) ---
 
 const SUBMIT_PLAN_TOOL: ChatCompletionTool = {
@@ -124,7 +151,7 @@ const SUBMIT_PLAN_TOOL: ChatCompletionTool = {
               },
               toolName: {
                 type: "string",
-                enum: ["reply_to_message", "post_channel_message"],
+                enum: WRITE_TOOL_NAMES,
                 description: "Which tool to use",
               },
               reasoning: {
@@ -144,7 +171,11 @@ const SUBMIT_PLAN_TOOL: ChatCompletionTool = {
 // --- Tool sets ---
 
 const READ_TOOLS: ChatCompletionTool[] = [readChannelHistoryTool, readThreadTool];
-const WRITE_TOOLS: ChatCompletionTool[] = [replyToMessageTool, postChannelMessageTool];
+const WRITE_TOOLS: ChatCompletionTool[] = [
+  replyToMessageTool,
+  postChannelMessageTool,
+  editMessageTool,
+];
 export const PLAN_TOOLS: ChatCompletionTool[] = [...READ_TOOLS, SUBMIT_PLAN_TOOL];
 export const ALL_TOOLS: ChatCompletionTool[] = [...READ_TOOLS, ...WRITE_TOOLS];
 
@@ -315,6 +346,30 @@ const toolHandlers: Record<string, ToolHandler> = {
       success: result.ok === true,
       output: result.ok ? `Replied in thread ${args.thread_ts}` : "Failed to reply",
     };
+  },
+
+  edit_message: async (ctx, args) => {
+    const error = validateStringArgs(args, ["message_ts", "text"]);
+    if (error) return { success: false, output: error };
+    const safeText = sanitizeSlackOutput(args.text as string);
+    try {
+      const result = await ctx.client.chat.update({
+        channel: ctx.channelId,
+        ts: args.message_ts as string,
+        text: safeText,
+        ...(ctx.userId && { blocks: messageBlocksWithAttribution(safeText, ctx.userId) }),
+      });
+      return {
+        success: result.ok === true,
+        output: result.ok ? `Message ${args.message_ts} updated` : "Failed to update message",
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("cant_update_message")) {
+        return { success: false, output: "Cannot edit: the bot can only edit its own messages" };
+      }
+      throw e;
+    }
   },
 
   post_channel_message: async (ctx, args) => {
