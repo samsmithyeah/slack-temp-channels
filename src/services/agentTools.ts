@@ -371,8 +371,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       if (msg.includes("msg_too_long")) {
         return {
           success: false,
-          output:
-            "Cannot edit: the updated message is too long. Try shortening the content or splitting it across multiple messages.",
+          output: `Cannot edit: the updated message is too long (${safeText.length} chars, limit is 40000). Try shortening the content or splitting it across multiple messages.`,
         };
       }
       if (msg.includes("message_not_found")) {
