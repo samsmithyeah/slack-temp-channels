@@ -302,7 +302,7 @@ describe("edit_message", () => {
       text: "Very long text",
     });
     expect(result.success).toBe(false);
-    expect(result.output).toContain("too long");
+    expect(result.output).toMatch(/too long \(\d+ chars, limit is 40000\)/);
   });
 
   it("returns specific error for message_not_found", async () => {
