@@ -8,6 +8,7 @@ import { resolveUserNames } from "./channelHistory";
 const MAX_READ_OUTPUT_CHARS = 15_000;
 const DEFAULT_READ_LIMIT = 100;
 const MAX_READ_LIMIT = 200;
+const SLACK_MESSAGE_CHAR_LIMIT = 40_000;
 
 // --- Read tool definitions ---
 
@@ -371,7 +372,7 @@ const toolHandlers: Record<string, ToolHandler> = {
       if (msg.includes("msg_too_long")) {
         return {
           success: false,
-          output: `Cannot edit: the updated message is too long (${safeText.length} chars, limit is 40000). Try shortening the content or splitting it across multiple messages.`,
+          output: `Cannot edit: the updated message is too long (${safeText.length} chars, limit is ${SLACK_MESSAGE_CHAR_LIMIT}). Try shortening the content or splitting it across multiple messages.`,
         };
       }
       if (msg.includes("message_not_found")) {
