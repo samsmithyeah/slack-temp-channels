@@ -292,6 +292,32 @@ describe("edit_message", () => {
     expect(result.output).toContain("bot can only edit its own messages");
   });
 
+  it("returns specific error for msg_too_long", async () => {
+    const ctx = makeCtx();
+    const client = ctx.client as unknown as ReturnType<typeof createMockClient>;
+    client.chat.update.mockRejectedValueOnce(new Error("An API error occurred: msg_too_long"));
+
+    const result = await executeTool("edit_message", ctx, {
+      message_ts: "1000.1",
+      text: "Very long text",
+    });
+    expect(result.success).toBe(false);
+    expect(result.output).toMatch(/too long \(\d+ chars, limit is 40000\)/);
+  });
+
+  it("returns specific error for message_not_found", async () => {
+    const ctx = makeCtx();
+    const client = ctx.client as unknown as ReturnType<typeof createMockClient>;
+    client.chat.update.mockRejectedValueOnce(new Error("An API error occurred: message_not_found"));
+
+    const result = await executeTool("edit_message", ctx, {
+      message_ts: "9999.9",
+      text: "Updated",
+    });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("message not found");
+  });
+
   it("rejects missing arguments", async () => {
     const ctx = makeCtx();
     const result = await executeTool("edit_message", ctx, { text: "Hello" });
