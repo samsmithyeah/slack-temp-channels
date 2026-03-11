@@ -1,7 +1,13 @@
 import type { WebClient } from "@slack/web-api";
 import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { ALL_TOOLS, executeTool, PLAN_TOOLS, type ToolContext } from "./agentTools";
+import {
+  ALL_TOOLS,
+  executeTool,
+  PLAN_TOOLS,
+  type ToolContext,
+  WRITE_TOOL_NAMES,
+} from "./agentTools";
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.2";
 const MAX_TOOL_ITERATIONS = 20;
@@ -77,7 +83,7 @@ After completing all steps, respond with a concise 2-4 sentence summary suitable
 // --- Helpers ---
 
 /** Tool names that count as write operations (i.e. plan steps) during execution. */
-const WRITE_TOOL_NAMES = new Set(["reply_to_message", "post_channel_message", "edit_message"]);
+const WRITE_TOOL_NAME_SET = new Set(WRITE_TOOL_NAMES);
 
 /** Escape closing XML-like tags in untrusted content to prevent prompt injection. */
 function sanitizeForPrompt(text: string): string {
@@ -145,6 +151,7 @@ export async function generatePlan(
 
   let plan: AgentPlan | undefined;
   let iterations = 0;
+  let textRetries = 0;
 
   while (iterations < MAX_PLAN_ITERATIONS) {
     iterations++;
@@ -179,7 +186,10 @@ export async function generatePlan(
         }
       }
       if (plan) break;
+      textRetries++;
+      if (textRetries > 1) break; // Give up after one nudge attempt
       // Nudge the model to use the submit_plan tool instead of replying with text
+      console.warn("Agent returned text instead of tool call, nudging to use submit_plan");
       messages.push({
         role: "user",
         content: "Please respond using the submit_plan tool instead of plain text.",
@@ -333,7 +343,7 @@ export async function executePlan(
         const args = JSON.parse(fn.arguments);
         toolOutput = await executeTool(fn.name, toolCtx, args);
         // Only count write operations as steps
-        if (WRITE_TOOL_NAMES.has(fn.name)) {
+        if (WRITE_TOOL_NAME_SET.has(fn.name)) {
           if (toolOutput.success) result.stepsCompleted++;
           else result.stepsFailed++;
           result.details.push(
@@ -345,7 +355,7 @@ export async function executePlan(
           success: false,
           output: `Error: ${error instanceof Error ? error.message : String(error)}`,
         };
-        if (WRITE_TOOL_NAMES.has(fn.name)) {
+        if (WRITE_TOOL_NAME_SET.has(fn.name)) {
           result.stepsFailed++;
           result.details.push(`${fn.name}: FAILED - ${toolOutput.output}`);
         }

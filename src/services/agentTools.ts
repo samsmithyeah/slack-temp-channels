@@ -120,6 +120,11 @@ const editMessageTool: ChatCompletionTool = {
   },
 };
 
+/** Write tool names used in submit_plan enum and execution step counting. */
+export const WRITE_TOOL_NAMES = [replyToMessageTool, postChannelMessageTool, editMessageTool].map(
+  (t) => t.function.name,
+);
+
 // --- submit_plan tool definition (used during planning only) ---
 
 const SUBMIT_PLAN_TOOL: ChatCompletionTool = {
@@ -146,7 +151,7 @@ const SUBMIT_PLAN_TOOL: ChatCompletionTool = {
               },
               toolName: {
                 type: "string",
-                enum: ["reply_to_message", "post_channel_message"],
+                enum: WRITE_TOOL_NAMES,
                 description: "Which tool to use",
               },
               reasoning: {
@@ -347,16 +352,24 @@ const toolHandlers: Record<string, ToolHandler> = {
     const error = validateStringArgs(args, ["message_ts", "text"]);
     if (error) return { success: false, output: error };
     const safeText = sanitizeSlackOutput(args.text as string);
-    const result = await ctx.client.chat.update({
-      channel: ctx.channelId,
-      ts: args.message_ts as string,
-      text: safeText,
-      ...(ctx.userId && { blocks: messageBlocksWithAttribution(safeText, ctx.userId) }),
-    });
-    return {
-      success: result.ok === true,
-      output: result.ok ? `Message ${args.message_ts} updated` : "Failed to update message",
-    };
+    try {
+      const result = await ctx.client.chat.update({
+        channel: ctx.channelId,
+        ts: args.message_ts as string,
+        text: safeText,
+        ...(ctx.userId && { blocks: messageBlocksWithAttribution(safeText, ctx.userId) }),
+      });
+      return {
+        success: result.ok === true,
+        output: result.ok ? `Message ${args.message_ts} updated` : "Failed to update message",
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("cant_update_message")) {
+        return { success: false, output: "Cannot edit: the bot can only edit its own messages" };
+      }
+      throw e;
+    }
   },
 
   post_channel_message: async (ctx, args) => {

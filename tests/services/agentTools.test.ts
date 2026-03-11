@@ -242,3 +242,70 @@ describe("post_channel_message", () => {
     expect(result.output).toContain("text");
   });
 });
+
+describe("edit_message", () => {
+  it("updates a message", async () => {
+    const ctx = makeCtx();
+    const client = ctx.client as unknown as ReturnType<typeof createMockClient>;
+    client.chat.update.mockResolvedValueOnce({ ok: true });
+
+    const result = await executeTool("edit_message", ctx, {
+      message_ts: "1000.1",
+      text: "Updated text",
+    });
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("updated");
+    expect(client.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "C_CHAN",
+        ts: "1000.1",
+        text: "Updated text",
+      }),
+    );
+  });
+
+  it("includes attribution blocks when userId is set", async () => {
+    const ctx = makeCtx({ userId: "U_TRIGGER" });
+    const client = ctx.client as unknown as ReturnType<typeof createMockClient>;
+    client.chat.update.mockResolvedValueOnce({ ok: true });
+
+    await executeTool("edit_message", ctx, { message_ts: "1000.1", text: "Hello" });
+
+    const call = client.chat.update.mock.calls[0][0];
+    expect(call.blocks).toBeDefined();
+    const contextBlock = call.blocks.find((b: { type: string }) => b.type === "context");
+    expect(contextBlock).toBeDefined();
+  });
+
+  it("returns specific error for cant_update_message", async () => {
+    const ctx = makeCtx();
+    const client = ctx.client as unknown as ReturnType<typeof createMockClient>;
+    client.chat.update.mockRejectedValueOnce(
+      new Error("An API error occurred: cant_update_message"),
+    );
+
+    const result = await executeTool("edit_message", ctx, {
+      message_ts: "1000.1",
+      text: "Updated",
+    });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("bot can only edit its own messages");
+  });
+
+  it("rejects missing arguments", async () => {
+    const ctx = makeCtx();
+    const result = await executeTool("edit_message", ctx, { text: "Hello" });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("message_ts");
+  });
+
+  it("rejects empty text", async () => {
+    const ctx = makeCtx();
+    const result = await executeTool("edit_message", ctx, {
+      message_ts: "1000.1",
+      text: "  ",
+    });
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("text");
+  });
+});

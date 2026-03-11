@@ -28,6 +28,7 @@ export function createMockClient() {
     },
     chat: {
       postMessage: vi.fn().mockResolvedValue({ ts: "1234567890.123456" }),
+      update: vi.fn().mockResolvedValue({ ok: true }),
       postEphemeral: vi.fn().mockResolvedValue({}),
     },
     pins: {
