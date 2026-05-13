@@ -1,6 +1,6 @@
 import type { App } from "@slack/bolt";
 import { executeAndNotify } from "../actions/agentTask";
-import { planBlocks } from "../agentBlocks";
+import { planBlocks, textSectionBlocks } from "../agentBlocks";
 import { isUserActive, markActive, markInactive } from "../services/activeTaskTracker";
 import { generatePlan } from "../services/agentPlanner";
 import { ApiKeyMissingError, getOpenAIClient } from "../services/openai";
@@ -123,15 +123,9 @@ export function registerAppMentionHandler(app: App): void {
           channel: dmChannelId,
           ts: statusMsg.ts!,
           text: `Executing plan: ${plan.summary}`,
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `:rocket: *YOLO mode* — executing plan immediately\n\n${plan.summary}`,
-              },
-            },
-          ],
+          blocks: textSectionBlocks(
+            `:rocket: *YOLO mode* — executing plan immediately\n\n${plan.summary}`,
+          ),
         });
 
         await executeAndNotify({
