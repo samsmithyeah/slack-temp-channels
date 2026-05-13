@@ -1,5 +1,6 @@
 import type { App } from "@slack/bolt";
-import { planBlocks } from "../agentBlocks";
+import { executeAndNotify } from "../actions/agentTask";
+import { planBlocks, textSectionBlocks } from "../agentBlocks";
 import { isUserActive, markActive, markInactive } from "../services/activeTaskTracker";
 import { generatePlan } from "../services/agentPlanner";
 import { ApiKeyMissingError, getOpenAIClient } from "../services/openai";
@@ -19,7 +20,9 @@ export function registerAppMentionHandler(app: App): void {
     if (channelId.startsWith("D")) return;
 
     // Extract task description by stripping the bot @mention
-    const taskDescription = event.text.replace(/<@[A-Z0-9]+>\s*/g, "").trim();
+    const rawText = event.text.replace(/<@[A-Z0-9]+>\s*/g, "").trim();
+    const isYolo = /\byolo\b/i.test(rawText);
+    const taskDescription = rawText.replace(/\s*\byolo\b\s*/gi, " ").trim();
 
     if (!taskDescription) {
       try {
@@ -67,6 +70,29 @@ export function registerAppMentionHandler(app: App): void {
       return;
     }
 
+    // React with eyes to acknowledge the mention
+    try {
+      await client.reactions.add({
+        channel: channelId,
+        timestamp: event.ts,
+        name: "eyes",
+      });
+    } catch (error) {
+      logger.error("Failed to add eyes reaction:", error);
+    }
+
+    const removeEyes = async () => {
+      try {
+        await client.reactions.remove({
+          channel: channelId,
+          timestamp: event.ts,
+          name: "eyes",
+        });
+      } catch {
+        // best-effort
+      }
+    };
+
     // Send initial status
     let statusMsg: Awaited<ReturnType<typeof client.chat.postMessage>>;
     try {
@@ -76,6 +102,7 @@ export function registerAppMentionHandler(app: App): void {
       });
     } catch (error) {
       logger.error("Failed to send status DM:", error);
+      await removeEyes();
       return;
     }
 
@@ -91,28 +118,51 @@ export function registerAppMentionHandler(app: App): void {
       );
       const { plan, planMessages } = planResult;
 
-      // Store plan and show approval in DM
-      const planId = createPlanId();
-      const planData: PlanData = {
-        id: planId,
-        userId,
-        channelId,
-        taskDescription,
-        plan,
-        planMessages,
-        threadTs,
-        dmChannelId,
-        dmMessageTs: statusMsg.ts!,
-        createdAt: Date.now(),
-      };
-      storePlan(planData);
+      if (isYolo) {
+        await client.chat.update({
+          channel: dmChannelId,
+          ts: statusMsg.ts!,
+          text: `Executing plan: ${plan.summary}`,
+          blocks: textSectionBlocks(
+            `:rocket: *YOLO mode* — executing plan immediately\n\n${plan.summary}`,
+          ),
+        });
 
-      await client.chat.update({
-        channel: dmChannelId,
-        ts: statusMsg.ts!,
-        text: `Plan: ${plan.summary}`,
-        blocks: planBlocks(plan, planId),
-      });
+        await executeAndNotify({
+          openai: getOpenAIClient(),
+          client,
+          channelId,
+          plan,
+          taskDescription,
+          userId,
+          dmChannelId,
+          planMessages,
+          threadTs,
+        });
+      } else {
+        // Store plan and show approval in DM
+        const planId = createPlanId();
+        const planData: PlanData = {
+          id: planId,
+          userId,
+          channelId,
+          taskDescription,
+          plan,
+          planMessages,
+          threadTs,
+          dmChannelId,
+          dmMessageTs: statusMsg.ts!,
+          createdAt: Date.now(),
+        };
+        storePlan(planData);
+
+        await client.chat.update({
+          channel: dmChannelId,
+          ts: statusMsg.ts!,
+          text: `Plan: ${plan.summary}`,
+          blocks: planBlocks(plan, planId),
+        });
+      }
     } catch (error) {
       logger.error("Failed to generate agent plan from @mention:", error);
       const errorMessage =
@@ -136,6 +186,7 @@ export function registerAppMentionHandler(app: App): void {
       }
     } finally {
       markInactive(userId);
+      await removeEyes();
     }
   });
 }
