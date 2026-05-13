@@ -9,8 +9,9 @@ import { registerDashCommand } from "./commands/dash";
 import { registerAppMentionHandler } from "./events/appMention";
 
 const signingSecret = process.env.SLACK_SIGNING_SECRET;
-if (!signingSecret) {
-  throw new Error("SLACK_SIGNING_SECRET environment variable is required");
+const botToken = process.env.SLACK_BOT_TOKEN;
+if (!signingSecret || !botToken) {
+  throw new Error("SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN environment variables are required");
 }
 
 const receiver = new ExpressReceiver({ signingSecret });
@@ -20,7 +21,7 @@ receiver.router.get("/health", (_req, res) => {
 });
 
 const app = new App({
-  token: process.env.SLACK_BOT_TOKEN,
+  token: botToken,
   receiver,
 });
 
@@ -32,12 +33,14 @@ registerAgentTaskHandlers(app);
 registerAppMentionHandler(app);
 registerHomeHandlers(app);
 
+const shutdown = async () => {
+  await app.stop();
+  process.exit(0);
+};
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+
 (async () => {
   await app.start(Number(process.env.PORT) || 3000);
   console.log("⚡ Dash app is running!");
-
-  process.on("SIGTERM", async () => {
-    await app.stop();
-    process.exit(0);
-  });
 })().catch(console.error);
