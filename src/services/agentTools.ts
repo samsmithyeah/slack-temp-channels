@@ -8,6 +8,7 @@ import { resolveUserNames } from "./channelHistory";
 const MAX_READ_OUTPUT_CHARS = 15_000;
 const DEFAULT_READ_LIMIT = 100;
 const MAX_READ_LIMIT = 200;
+const SLACK_MESSAGE_CHAR_LIMIT = 40_000;
 
 // --- Read tool definitions ---
 
@@ -364,9 +365,18 @@ const toolHandlers: Record<string, ToolHandler> = {
         output: result.ok ? `Message ${args.message_ts} updated` : "Failed to update message",
       };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("cant_update_message")) {
+      const slackError = (e as { data?: { error?: string } }).data?.error;
+      if (slackError === "cant_update_message") {
         return { success: false, output: "Cannot edit: the bot can only edit its own messages" };
+      }
+      if (slackError === "msg_too_long") {
+        return {
+          success: false,
+          output: `Cannot edit: the updated message is too long (${safeText.length} chars, limit is ${SLACK_MESSAGE_CHAR_LIMIT}). Try shortening the content or splitting it across multiple messages.`,
+        };
+      }
+      if (slackError === "message_not_found") {
+        return { success: false, output: "Cannot edit: message not found. Check the timestamp." };
       }
       throw e;
     }
