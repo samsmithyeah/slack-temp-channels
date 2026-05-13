@@ -14,7 +14,7 @@ if (!signingSecret || !botToken) {
   throw new Error("SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN environment variables are required");
 }
 
-const receiver = new ExpressReceiver({ signingSecret });
+const receiver = new ExpressReceiver({ signingSecret, processBeforeResponse: true });
 
 receiver.router.get("/health", (_req, res) => {
   res.status(200).send("ok");
@@ -48,4 +48,7 @@ process.once("SIGINT", shutdown);
 (async () => {
   await app.start(Number(process.env.PORT) || 3000);
   console.log("⚡ Dash app is running!");
-})().catch(console.error);
+})().catch((error) => {
+  console.error("Failed to start:", error);
+  process.exit(1);
+});
