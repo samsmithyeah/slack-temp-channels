@@ -17,6 +17,7 @@
     "slash_commands": [
       {
         "command": "/dash",
+        "url": "https://slack-temp-channels-275356314049.europe-west2.run.app/slack/events",
         "description": "Create a temporary channel",
         "usage_hint": "[@user1 @user2 ...]",
         "should_escape": false
@@ -44,10 +45,12 @@
   },
   "settings": {
     "event_subscriptions": {
+      "request_url": "https://slack-temp-channels-275356314049.europe-west2.run.app/slack/events",
       "bot_events": ["app_home_opened", "app_mention"]
     },
     "interactivity": {
-      "is_enabled": true
+      "is_enabled": true,
+      "request_url": "https://slack-temp-channels-275356314049.europe-west2.run.app/slack/events"
     },
     "org_deploy_enabled": false,
     "socket_mode_enabled": false,

@@ -8,9 +8,12 @@ import { registerHomeHandlers } from "./actions/home";
 import { registerDashCommand } from "./commands/dash";
 import { registerAppMentionHandler } from "./events/appMention";
 
-const receiver = new ExpressReceiver({
-  signingSecret: process.env.SLACK_SIGNING_SECRET!,
-});
+const signingSecret = process.env.SLACK_SIGNING_SECRET;
+if (!signingSecret) {
+  throw new Error("SLACK_SIGNING_SECRET environment variable is required");
+}
+
+const receiver = new ExpressReceiver({ signingSecret });
 
 receiver.router.get("/health", (_req, res) => {
   res.status(200).send("ok");
@@ -32,4 +35,9 @@ registerHomeHandlers(app);
 (async () => {
   await app.start(Number(process.env.PORT) || 3000);
   console.log("⚡ Dash app is running!");
+
+  process.on("SIGTERM", async () => {
+    await app.stop();
+    process.exit(0);
+  });
 })().catch(console.error);
