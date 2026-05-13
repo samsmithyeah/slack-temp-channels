@@ -53,22 +53,11 @@ export function registerAppMentionHandler(app: App): void {
       return;
     }
 
+    // Mark active immediately to prevent duplicate event deliveries from racing
+    markActive(userId);
+
     // Detect thread scope
     const threadTs = event.thread_ts;
-
-    // Open DM with user
-    let dmChannelId: string;
-    try {
-      const dm = await client.conversations.open({ users: userId });
-      if (!dm.channel?.id) {
-        logger.error("Failed to open DM: channel ID missing");
-        return;
-      }
-      dmChannelId = dm.channel.id;
-    } catch (error) {
-      logger.error("Failed to open DM for @mention agent task:", error);
-      return;
-    }
 
     // React with eyes to acknowledge the mention
     try {
@@ -93,6 +82,24 @@ export function registerAppMentionHandler(app: App): void {
       }
     };
 
+    // Open DM with user
+    let dmChannelId: string;
+    try {
+      const dm = await client.conversations.open({ users: userId });
+      if (!dm.channel?.id) {
+        logger.error("Failed to open DM: channel ID missing");
+        markInactive(userId);
+        await removeEyes();
+        return;
+      }
+      dmChannelId = dm.channel.id;
+    } catch (error) {
+      logger.error("Failed to open DM for @mention agent task:", error);
+      markInactive(userId);
+      await removeEyes();
+      return;
+    }
+
     // Send initial status
     let statusMsg: Awaited<ReturnType<typeof client.chat.postMessage>>;
     try {
@@ -102,11 +109,11 @@ export function registerAppMentionHandler(app: App): void {
       });
     } catch (error) {
       logger.error("Failed to send status DM:", error);
+      markInactive(userId);
       await removeEyes();
       return;
     }
 
-    markActive(userId);
     try {
       const planResult = await generatePlan(
         getOpenAIClient(),
