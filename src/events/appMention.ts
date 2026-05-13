@@ -56,31 +56,6 @@ export function registerAppMentionHandler(app: App): void {
     // Detect thread scope
     const threadTs = event.thread_ts;
 
-    // Open DM with user
-    let dmChannelId: string;
-    try {
-      const dm = await client.conversations.open({ users: userId });
-      if (!dm.channel?.id) {
-        logger.error("Failed to open DM: channel ID missing");
-        return;
-      }
-      dmChannelId = dm.channel.id;
-    } catch (error) {
-      logger.error("Failed to open DM for @mention agent task:", error);
-      return;
-    }
-
-    // React with eyes to acknowledge the mention
-    try {
-      await client.reactions.add({
-        channel: channelId,
-        timestamp: event.ts,
-        name: "eyes",
-      });
-    } catch (error) {
-      logger.error("Failed to add eyes reaction:", error);
-    }
-
     const removeEyes = async () => {
       try {
         await client.reactions.remove({
@@ -93,21 +68,35 @@ export function registerAppMentionHandler(app: App): void {
       }
     };
 
-    // Send initial status
-    let statusMsg: Awaited<ReturnType<typeof client.chat.postMessage>>;
+    let dmChannelId: string | undefined;
+    let dmMessageTs: string | undefined;
+
+    // Mark active immediately to prevent duplicate event deliveries from racing
+    markActive(userId);
     try {
-      statusMsg = await client.chat.postMessage({
+      // React with eyes to acknowledge the mention
+      try {
+        await client.reactions.add({
+          channel: channelId,
+          timestamp: event.ts,
+          name: "eyes",
+        });
+      } catch (error) {
+        logger.error("Failed to add eyes reaction:", error);
+      }
+
+      // Open DM with user
+      const dm = await client.conversations.open({ users: userId });
+      if (!dm.channel?.id) throw new Error("channel ID missing");
+      dmChannelId = dm.channel.id;
+
+      // Send initial status
+      const statusMsg = await client.chat.postMessage({
         channel: dmChannelId,
         text: ":hourglass_flowing_sand: Generating plan for your task...",
       });
-    } catch (error) {
-      logger.error("Failed to send status DM:", error);
-      await removeEyes();
-      return;
-    }
+      dmMessageTs = statusMsg.ts!;
 
-    markActive(userId);
-    try {
       const planResult = await generatePlan(
         getOpenAIClient(),
         client,
@@ -120,8 +109,8 @@ export function registerAppMentionHandler(app: App): void {
 
       if (isYolo) {
         await client.chat.update({
-          channel: dmChannelId,
-          ts: statusMsg.ts!,
+          channel: dmChannelId!,
+          ts: dmMessageTs!,
           text: `Executing plan: ${plan.summary}`,
           blocks: textSectionBlocks(
             `:rocket: *YOLO mode* — executing plan immediately\n\n${plan.summary}`,
@@ -150,39 +139,60 @@ export function registerAppMentionHandler(app: App): void {
           plan,
           planMessages,
           threadTs,
-          dmChannelId,
-          dmMessageTs: statusMsg.ts!,
+          dmChannelId: dmChannelId!,
+          dmMessageTs: dmMessageTs!,
           createdAt: Date.now(),
         };
         storePlan(planData);
 
         await client.chat.update({
-          channel: dmChannelId,
-          ts: statusMsg.ts!,
+          channel: dmChannelId!,
+          ts: dmMessageTs!,
           text: `Plan: ${plan.summary}`,
           blocks: planBlocks(plan, planId),
         });
       }
     } catch (error) {
-      logger.error("Failed to generate agent plan from @mention:", error);
-      const errorMessage =
-        error instanceof ApiKeyMissingError
-          ? "OpenAI API key is not configured."
-          : `Failed to generate plan: ${error instanceof Error ? error.message : "unknown error"}`;
-      try {
-        await client.chat.update({
-          channel: dmChannelId,
-          ts: statusMsg.ts!,
-          text: errorMessage,
-          blocks: [
-            {
-              type: "section",
-              text: { type: "mrkdwn", text: `:x: ${errorMessage}` },
-            },
-          ],
-        });
-      } catch (updateError) {
-        logger.error("Failed to update DM with error:", updateError);
+      logger.error("Failed to process @mention agent task:", error);
+      if (dmChannelId) {
+        const errorMessage =
+          error instanceof ApiKeyMissingError
+            ? "OpenAI API key is not configured."
+            : `Failed to generate plan: ${error instanceof Error ? error.message : "unknown error"}`;
+        const errorBlocks = [
+          {
+            type: "section" as const,
+            text: { type: "mrkdwn" as const, text: `:x: ${errorMessage}` },
+          },
+        ];
+        try {
+          if (dmMessageTs) {
+            await client.chat.update({
+              channel: dmChannelId,
+              ts: dmMessageTs,
+              text: errorMessage,
+              blocks: errorBlocks,
+            });
+          } else {
+            await client.chat.postMessage({
+              channel: dmChannelId,
+              text: errorMessage,
+              blocks: errorBlocks,
+            });
+          }
+        } catch (notifyError) {
+          logger.error("Failed to notify user of error:", notifyError);
+        }
+      } else {
+        try {
+          await client.chat.postEphemeral({
+            channel: channelId,
+            user: userId,
+            text: `:x: Failed to process task: ${error instanceof Error ? error.message : "unknown error"}`,
+          });
+        } catch {
+          // best-effort
+        }
       }
     } finally {
       markInactive(userId);
