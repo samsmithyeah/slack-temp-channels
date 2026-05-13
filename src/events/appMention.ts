@@ -7,10 +7,18 @@ import { ApiKeyMissingError, getOpenAIClient } from "../services/openai";
 import { createPlanId, type PlanData, storePlan } from "../services/planStore";
 import { isChannelMember } from "../utils";
 
+// Deduplicate Slack event retries using event_ts (kept for 60s)
+const recentEvents = new Set<string>();
+
 // --- Registration ---
 
 export function registerAppMentionHandler(app: App): void {
   app.event("app_mention", async ({ event, client, logger }) => {
+    const eventId = event.event_ts ?? event.ts;
+    if (recentEvents.has(eventId)) return;
+    recentEvents.add(eventId);
+    setTimeout(() => recentEvents.delete(eventId), 60_000);
+
     const channelId = event.channel;
     const userId = event.user as string | undefined;
 
