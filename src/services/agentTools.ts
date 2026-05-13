@@ -365,17 +365,17 @@ const toolHandlers: Record<string, ToolHandler> = {
         output: result.ok ? `Message ${args.message_ts} updated` : "Failed to update message",
       };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("cant_update_message")) {
+      const slackError = (e as { data?: { error?: string } }).data?.error;
+      if (slackError === "cant_update_message") {
         return { success: false, output: "Cannot edit: the bot can only edit its own messages" };
       }
-      if (msg.includes("msg_too_long")) {
+      if (slackError === "msg_too_long") {
         return {
           success: false,
           output: `Cannot edit: the updated message is too long (${safeText.length} chars, limit is ${SLACK_MESSAGE_CHAR_LIMIT}). Try shortening the content or splitting it across multiple messages.`,
         };
       }
-      if (msg.includes("message_not_found")) {
+      if (slackError === "message_not_found") {
         return { success: false, output: "Cannot edit: message not found. Check the timestamp." };
       }
       throw e;

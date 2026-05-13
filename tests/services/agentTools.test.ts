@@ -12,6 +12,14 @@ vi.mock("../../src/services/channelHistory", () => ({
 
 import { executeTool, type ToolContext } from "../../src/services/agentTools";
 
+/** Create a realistic Slack WebAPIPlatformError with data.error set. */
+function slackPlatformError(errorCode: string) {
+  const err = new Error(`An API error occurred: ${errorCode}`);
+  (err as unknown as Record<string, unknown>).code = "slack_webapi_platform_error";
+  (err as unknown as Record<string, unknown>).data = { ok: false, error: errorCode };
+  return err;
+}
+
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
     client: createMockClient() as unknown as ToolContext["client"],
@@ -280,9 +288,7 @@ describe("edit_message", () => {
   it("returns specific error for cant_update_message", async () => {
     const ctx = makeCtx();
     const client = ctx.client as unknown as ReturnType<typeof createMockClient>;
-    client.chat.update.mockRejectedValueOnce(
-      new Error("An API error occurred: cant_update_message"),
-    );
+    client.chat.update.mockRejectedValueOnce(slackPlatformError("cant_update_message"));
 
     const result = await executeTool("edit_message", ctx, {
       message_ts: "1000.1",
@@ -295,7 +301,7 @@ describe("edit_message", () => {
   it("returns specific error for msg_too_long", async () => {
     const ctx = makeCtx();
     const client = ctx.client as unknown as ReturnType<typeof createMockClient>;
-    client.chat.update.mockRejectedValueOnce(new Error("An API error occurred: msg_too_long"));
+    client.chat.update.mockRejectedValueOnce(slackPlatformError("msg_too_long"));
 
     const result = await executeTool("edit_message", ctx, {
       message_ts: "1000.1",
@@ -308,7 +314,7 @@ describe("edit_message", () => {
   it("returns specific error for message_not_found", async () => {
     const ctx = makeCtx();
     const client = ctx.client as unknown as ReturnType<typeof createMockClient>;
-    client.chat.update.mockRejectedValueOnce(new Error("An API error occurred: message_not_found"));
+    client.chat.update.mockRejectedValueOnce(slackPlatformError("message_not_found"));
 
     const result = await executeTool("edit_message", ctx, {
       message_ts: "9999.9",
