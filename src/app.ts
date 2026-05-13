@@ -34,8 +34,13 @@ registerAppMentionHandler(app);
 registerHomeHandlers(app);
 
 const shutdown = async () => {
-  await app.stop();
-  process.exit(0);
+  try {
+    await app.stop();
+    process.exit(0);
+  } catch (error) {
+    console.error("Error during graceful shutdown:", error);
+    process.exit(1);
+  }
 };
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
