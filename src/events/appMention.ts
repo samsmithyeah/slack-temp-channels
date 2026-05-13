@@ -141,7 +141,7 @@ export function registerAppMentionHandler(app: App): void {
           planMessages,
           threadTs,
           dmChannelId,
-          dmMessageTs,
+          dmMessageTs: dmMessageTs!,
           createdAt: Date.now(),
         };
         storePlan(planData);
@@ -155,25 +155,34 @@ export function registerAppMentionHandler(app: App): void {
       }
     } catch (error) {
       logger.error("Failed to process @mention agent task:", error);
-      if (dmChannelId && dmMessageTs) {
+      if (dmChannelId) {
         const errorMessage =
           error instanceof ApiKeyMissingError
             ? "OpenAI API key is not configured."
             : `Failed to generate plan: ${error instanceof Error ? error.message : "unknown error"}`;
+        const errorBlocks = [
+          {
+            type: "section" as const,
+            text: { type: "mrkdwn" as const, text: `:x: ${errorMessage}` },
+          },
+        ];
         try {
-          await client.chat.update({
-            channel: dmChannelId,
-            ts: dmMessageTs,
-            text: errorMessage,
-            blocks: [
-              {
-                type: "section",
-                text: { type: "mrkdwn", text: `:x: ${errorMessage}` },
-              },
-            ],
-          });
-        } catch (updateError) {
-          logger.error("Failed to update DM with error:", updateError);
+          if (dmMessageTs) {
+            await client.chat.update({
+              channel: dmChannelId,
+              ts: dmMessageTs,
+              text: errorMessage,
+              blocks: errorBlocks,
+            });
+          } else {
+            await client.chat.postMessage({
+              channel: dmChannelId,
+              text: errorMessage,
+              blocks: errorBlocks,
+            });
+          }
+        } catch (notifyError) {
+          logger.error("Failed to notify user of error:", notifyError);
         }
       }
     } finally {
