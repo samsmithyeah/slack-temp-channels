@@ -109,8 +109,8 @@ export function registerAppMentionHandler(app: App): void {
 
       if (isYolo) {
         await client.chat.update({
-          channel: dmChannelId,
-          ts: dmMessageTs,
+          channel: dmChannelId!,
+          ts: dmMessageTs!,
           text: `Executing plan: ${plan.summary}`,
           blocks: textSectionBlocks(
             `:rocket: *YOLO mode* — executing plan immediately\n\n${plan.summary}`,
@@ -139,14 +139,14 @@ export function registerAppMentionHandler(app: App): void {
           plan,
           planMessages,
           threadTs,
-          dmChannelId,
+          dmChannelId: dmChannelId!,
           dmMessageTs: dmMessageTs!,
           createdAt: Date.now(),
         };
         storePlan(planData);
 
         await client.chat.update({
-          channel: dmChannelId,
+          channel: dmChannelId!,
           ts: dmMessageTs!,
           text: `Plan: ${plan.summary}`,
           blocks: planBlocks(plan, planId),
