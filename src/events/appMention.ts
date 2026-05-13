@@ -22,7 +22,7 @@ export function registerAppMentionHandler(app: App): void {
     // Extract task description by stripping the bot @mention
     const rawText = event.text.replace(/<@[A-Z0-9]+>\s*/g, "").trim();
     const isYolo = /\byolo\b/i.test(rawText);
-    const taskDescription = rawText.replace(/\byolo\b/i, "").trim();
+    const taskDescription = rawText.replace(/\byolo\b/gi, "").trim();
 
     if (!taskDescription) {
       try {
