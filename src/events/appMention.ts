@@ -53,9 +53,6 @@ export function registerAppMentionHandler(app: App): void {
       return;
     }
 
-    // Mark active immediately to prevent duplicate event deliveries from racing
-    markActive(userId);
-
     // Detect thread scope
     const threadTs = event.thread_ts;
 
@@ -74,6 +71,8 @@ export function registerAppMentionHandler(app: App): void {
     let dmChannelId: string | undefined;
     let dmMessageTs: string | undefined;
 
+    // Mark active immediately to prevent duplicate event deliveries from racing
+    markActive(userId);
     try {
       // React with eyes to acknowledge the mention
       try {
@@ -148,7 +147,7 @@ export function registerAppMentionHandler(app: App): void {
 
         await client.chat.update({
           channel: dmChannelId,
-          ts: dmMessageTs,
+          ts: dmMessageTs!,
           text: `Plan: ${plan.summary}`,
           blocks: planBlocks(plan, planId),
         });
@@ -183,6 +182,16 @@ export function registerAppMentionHandler(app: App): void {
           }
         } catch (notifyError) {
           logger.error("Failed to notify user of error:", notifyError);
+        }
+      } else {
+        try {
+          await client.chat.postEphemeral({
+            channel: channelId,
+            user: userId,
+            text: `:x: Failed to process task: ${error instanceof Error ? error.message : "unknown error"}`,
+          });
+        } catch {
+          // best-effort
         }
       }
     } finally {
