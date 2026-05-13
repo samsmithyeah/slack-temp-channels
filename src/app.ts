@@ -42,8 +42,8 @@ const shutdown = async () => {
     process.exit(1);
   }
 };
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);
 
 (async () => {
   await app.start(Number(process.env.PORT) || 3000);
