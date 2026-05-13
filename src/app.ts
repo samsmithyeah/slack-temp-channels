@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { App } from "@slack/bolt";
+import { App, ExpressReceiver } from "@slack/bolt";
 import { registerAgentTaskHandlers } from "./actions/agentTask";
 import { registerBroadcastAction } from "./actions/broadcast";
 import { registerCloseAction } from "./actions/close";
@@ -8,14 +8,23 @@ import { registerHomeHandlers } from "./actions/home";
 import { registerDashCommand } from "./commands/dash";
 import { registerAppMentionHandler } from "./events/appMention";
 
-const app = new App({
-  token: process.env.SLACK_BOT_TOKEN,
-  appToken: process.env.SLACK_APP_TOKEN,
-  signingSecret: process.env.SLACK_SIGNING_SECRET,
-  socketMode: true,
+const signingSecret = process.env.SLACK_SIGNING_SECRET;
+const botToken = process.env.SLACK_BOT_TOKEN;
+if (!signingSecret || !botToken) {
+  throw new Error("SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN environment variables are required");
+}
+
+const receiver = new ExpressReceiver({ signingSecret, processBeforeResponse: true });
+
+receiver.router.get("/health", (_req, res) => {
+  res.status(200).send("ok");
 });
 
-// Register all handlers
+const app = new App({
+  token: botToken,
+  receiver,
+});
+
 registerDashCommand(app);
 registerCloseAction(app);
 registerBroadcastAction(app);
@@ -24,7 +33,22 @@ registerAgentTaskHandlers(app);
 registerAppMentionHandler(app);
 registerHomeHandlers(app);
 
+const shutdown = async () => {
+  try {
+    await app.stop();
+    process.exit(0);
+  } catch (error) {
+    console.error("Error during graceful shutdown:", error);
+    process.exit(1);
+  }
+};
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);
+
 (async () => {
-  await app.start();
+  await app.start(Number(process.env.PORT) || 3000);
   console.log("⚡ Dash app is running!");
-})().catch(console.error);
+})().catch((error) => {
+  console.error("Failed to start:", error);
+  process.exit(1);
+});
