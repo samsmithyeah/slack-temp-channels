@@ -22,7 +22,7 @@ export function registerAppMentionHandler(app: App): void {
     // Extract task description by stripping the bot @mention
     const rawText = event.text.replace(/<@[A-Z0-9]+>\s*/g, "").trim();
     const isYolo = /\byolo\b/i.test(rawText);
-    const taskDescription = rawText.replace(/\byolo\b/gi, "").trim();
+    const taskDescription = rawText.replace(/\s*\byolo\b\s*/gi, " ").trim();
 
     if (!taskDescription) {
       try {
@@ -81,6 +81,18 @@ export function registerAppMentionHandler(app: App): void {
       logger.error("Failed to add eyes reaction:", error);
     }
 
+    const removeEyes = async () => {
+      try {
+        await client.reactions.remove({
+          channel: channelId,
+          timestamp: event.ts,
+          name: "eyes",
+        });
+      } catch {
+        // best-effort
+      }
+    };
+
     // Send initial status
     let statusMsg: Awaited<ReturnType<typeof client.chat.postMessage>>;
     try {
@@ -90,6 +102,7 @@ export function registerAppMentionHandler(app: App): void {
       });
     } catch (error) {
       logger.error("Failed to send status DM:", error);
+      await removeEyes();
       return;
     }
 
@@ -179,16 +192,7 @@ export function registerAppMentionHandler(app: App): void {
       }
     } finally {
       markInactive(userId);
-      // Remove eyes reaction now that we're done
-      try {
-        await client.reactions.remove({
-          channel: channelId,
-          timestamp: event.ts,
-          name: "eyes",
-        });
-      } catch {
-        // best-effort
-      }
+      await removeEyes();
     }
   });
 }
