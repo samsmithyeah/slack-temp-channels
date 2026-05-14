@@ -26,6 +26,7 @@ export interface PlanStep {
 export interface AgentPlan {
   summary: string;
   steps: PlanStep[];
+  requiresApproval: boolean;
 }
 
 export interface ExecutionResult {
@@ -112,7 +113,9 @@ function parsePlanFromArgs(args: Record<string, unknown>): AgentPlan {
     }
   }
 
-  return { summary, steps };
+  const requiresApproval =
+    typeof args.requiresApproval === "boolean" ? args.requiresApproval : true;
+  return { summary, steps, requiresApproval };
 }
 
 // --- Public API ---

@@ -109,7 +109,7 @@ interface ExecuteAndNotifyParams {
   threadTs?: string;
 }
 
-export async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<void> {
+async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<void> {
   const {
     openai,
     client,

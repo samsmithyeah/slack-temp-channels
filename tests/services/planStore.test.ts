@@ -14,7 +14,7 @@ function makePlan(overrides: Partial<PlanData> = {}): PlanData {
     userId: "U_USER",
     channelId: "C_CHAN",
     taskDescription: "test task",
-    plan: { summary: "test", steps: [] } as AgentPlan,
+    plan: { summary: "test", steps: [], requiresApproval: false } as AgentPlan,
     dmChannelId: "D_DM",
     dmMessageTs: "1234567890.000001",
     createdAt: Date.now(),

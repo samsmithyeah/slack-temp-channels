@@ -57,6 +57,7 @@ describe("planBlocks", () => {
         { description: "Reply to msg 1", toolName: "reply_to_message", reasoning: "test" },
         { description: "Reply to msg 2", toolName: "reply_to_message", reasoning: "test" },
       ],
+      requiresApproval: true,
     };
 
     const blocks = planBlocks(plan, "plan_123");
@@ -81,6 +82,7 @@ describe("planBlocks", () => {
         { description: "Step one", toolName: "reply_to_message", reasoning: "r" },
         { description: "Step two", toolName: "post_channel_message", reasoning: "r" },
       ],
+      requiresApproval: true,
     };
 
     const blocks = planBlocks(plan, "plan_456");
@@ -97,6 +99,7 @@ describe("planBlocks", () => {
     const plan: AgentPlan = {
       summary: "Cannot accomplish task",
       steps: [],
+      requiresApproval: false,
     };
 
     const blocks = planBlocks(plan, "plan_789");
