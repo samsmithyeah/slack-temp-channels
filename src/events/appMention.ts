@@ -24,7 +24,7 @@ export function registerAppMentionHandler(app: App): void {
     if (recentEvents.has(eventId)) return;
     if (recentEvents.size >= MAX_RECENT_EVENTS) recentEvents.clear();
     recentEvents.add(eventId);
-    setTimeout(() => recentEvents.delete(eventId), 60_000);
+    setTimeout(() => recentEvents.delete(eventId), 60_000).unref();
 
     const channelId = event.channel;
     const userId = event.user as string | undefined;
@@ -74,6 +74,7 @@ export function registerAppMentionHandler(app: App): void {
     // Mark active immediately to prevent duplicate event deliveries from racing
     markActive(userId);
     let removeEyesOnFinally = true;
+    let removeGearOnFinally = false;
     let outcomeReaction: string | null = null;
     try {
       // React with eyes to acknowledge the mention (stays until execution starts)
@@ -98,6 +99,7 @@ export function registerAppMentionHandler(app: App): void {
         await removeReaction(client, channelId, event.ts, "eyes");
         removeEyesOnFinally = false;
         await addReaction(client, channelId, event.ts, "gear");
+        removeGearOnFinally = true;
 
         const result = await executePlan(
           openai,
@@ -169,8 +171,9 @@ export function registerAppMentionHandler(app: App): void {
       if (removeEyesOnFinally) {
         await removeReaction(client, channelId, event.ts, "eyes");
       }
-      // Swap cog for outcome reaction (cog only present in YOLO path)
-      await removeReaction(client, channelId, event.ts, "gear");
+      if (removeGearOnFinally) {
+        await removeReaction(client, channelId, event.ts, "gear");
+      }
       if (outcomeReaction) {
         await addReaction(client, channelId, event.ts, outcomeReaction);
       }
