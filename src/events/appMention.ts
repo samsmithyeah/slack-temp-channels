@@ -115,7 +115,7 @@ export function registerAppMentionHandler(app: App): void {
           userId,
         );
         executed = result.stepsCompleted > 0 || result.stepsFailed === 0;
-        if (executed && result.summary) {
+        if (result.summary) {
           try {
             await client.chat.postEphemeral({
               channel: channelId,
