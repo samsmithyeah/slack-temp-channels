@@ -91,7 +91,7 @@ function sanitizeForPrompt(text: string): string {
   return text.replace(/<\//g, "<\\/");
 }
 
-function parsePlanFromArgs(args: Record<string, unknown>): AgentPlan {
+export function parsePlanFromArgs(args: Record<string, unknown>): AgentPlan {
   const summary = typeof args.summary === "string" ? args.summary : "No summary provided";
   const steps: PlanStep[] = [];
 
