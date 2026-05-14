@@ -1,13 +1,20 @@
 import type { App } from "@slack/bolt";
-import { executeAndNotify } from "../actions/agentTask";
-import { planBlocks, textSectionBlocks } from "../agentBlocks";
+import { planBlocks } from "../agentBlocks";
 import { isUserActive, markActive, markInactive } from "../services/activeTaskTracker";
-import { generatePlan } from "../services/agentPlanner";
+import { executePlan, generatePlan } from "../services/agentPlanner";
+import {
+  addReaction,
+  getOutcomeReaction,
+  removeReaction,
+  shouldYolo,
+} from "../services/agentReactions";
+import { sanitizeSlackOutput } from "../services/agentTools";
 import { ApiKeyMissingError, getOpenAIClient } from "../services/openai";
-import { createPlanId, type PlanData, storePlan } from "../services/planStore";
+import { createPlanId, storePlan } from "../services/planStore";
 import { isChannelMember } from "../utils";
 
 // Deduplicate Slack event retries using event_ts (kept for 60s)
+const MAX_RECENT_EVENTS = 10_000;
 const recentEvents = new Set<string>();
 
 // --- Registration ---
@@ -16,8 +23,9 @@ export function registerAppMentionHandler(app: App): void {
   app.event("app_mention", async ({ event, client, logger }) => {
     const eventId = event.event_ts ?? event.ts;
     if (recentEvents.has(eventId)) return;
+    if (recentEvents.size >= MAX_RECENT_EVENTS) recentEvents.clear();
     recentEvents.add(eventId);
-    setTimeout(() => recentEvents.delete(eventId), 60_000);
+    setTimeout(() => recentEvents.delete(eventId), 60_000).unref();
 
     const channelId = event.channel;
     const userId = event.user as string | undefined;
@@ -64,49 +72,18 @@ export function registerAppMentionHandler(app: App): void {
     // Detect thread scope
     const threadTs = event.thread_ts;
 
-    const removeEyes = async () => {
-      try {
-        await client.reactions.remove({
-          channel: channelId,
-          timestamp: event.ts,
-          name: "eyes",
-        });
-      } catch {
-        // best-effort
-      }
-    };
-
-    let dmChannelId: string | undefined;
-    let dmMessageTs: string | undefined;
-
     // Mark active immediately to prevent duplicate event deliveries from racing
     markActive(userId);
+    let removeEyesOnFinally = true;
+    let removeGearOnFinally = false;
+    let outcomeReaction: string | null = null;
     try {
-      // React with eyes to acknowledge the mention
-      try {
-        await client.reactions.add({
-          channel: channelId,
-          timestamp: event.ts,
-          name: "eyes",
-        });
-      } catch (error) {
-        logger.error("Failed to add eyes reaction:", error);
-      }
+      // React with eyes to acknowledge the mention (stays until execution starts)
+      await addReaction(client, channelId, event.ts, "eyes");
 
-      // Open DM with user
-      const dm = await client.conversations.open({ users: userId });
-      if (!dm.channel?.id) throw new Error("channel ID missing");
-      dmChannelId = dm.channel.id;
-
-      // Send initial status
-      const statusMsg = await client.chat.postMessage({
-        channel: dmChannelId,
-        text: ":hourglass_flowing_sand: Generating plan for your task...",
-      });
-      dmMessageTs = statusMsg.ts!;
-
+      const openai = getOpenAIClient();
       const planResult = await generatePlan(
-        getOpenAIClient(),
+        openai,
         client,
         channelId,
         taskDescription,
@@ -115,31 +92,56 @@ export function registerAppMentionHandler(app: App): void {
       );
       const { plan, planMessages } = planResult;
 
-      if (isYolo) {
-        await client.chat.update({
-          channel: dmChannelId!,
-          ts: dmMessageTs!,
-          text: `Executing plan: ${plan.summary}`,
-          blocks: textSectionBlocks(
-            `:rocket: *YOLO mode* — executing plan immediately\n\n${plan.summary}`,
-          ),
-        });
+      if (shouldYolo(isYolo, plan)) {
+        logger.info(
+          `Auto-executing plan (yolo=${isYolo}, requiresApproval=${plan.requiresApproval}, steps=${plan.steps.length})`,
+        );
+        // Swap eyes for cog during execution
+        await removeReaction(client, channelId, event.ts, "eyes");
+        removeEyesOnFinally = false;
+        await addReaction(client, channelId, event.ts, "gear");
+        removeGearOnFinally = true;
 
-        await executeAndNotify({
-          openai: getOpenAIClient(),
+        const result = await executePlan(
+          openai,
           client,
           channelId,
           plan,
           taskDescription,
-          userId,
-          dmChannelId,
           planMessages,
           threadTs,
-        });
+          userId,
+        );
+        outcomeReaction = getOutcomeReaction(result);
+        if (result.summary) {
+          try {
+            await client.chat.postEphemeral({
+              channel: channelId,
+              user: userId,
+              text: sanitizeSlackOutput(result.summary),
+              thread_ts: threadTs,
+            });
+          } catch {
+            // best-effort
+          }
+        }
       } else {
-        // Store plan and show approval in DM
+        // Eyes stay until user accepts/declines — don't remove in finally
+        removeEyesOnFinally = false;
+
+        // Open DM and show plan for approval
+        const dm = await client.conversations.open({ users: userId });
+        if (!dm.channel?.id) throw new Error("channel ID missing");
+        const dmChannelId = dm.channel.id;
+
         const planId = createPlanId();
-        const planData: PlanData = {
+
+        const statusMsg = await client.chat.postMessage({
+          channel: dmChannelId,
+          text: `Plan: ${plan.summary}`,
+          blocks: planBlocks(plan, planId),
+        });
+        storePlan({
           id: planId,
           userId,
           channelId,
@@ -147,64 +149,39 @@ export function registerAppMentionHandler(app: App): void {
           plan,
           planMessages,
           threadTs,
-          dmChannelId: dmChannelId!,
-          dmMessageTs: dmMessageTs!,
+          mentionChannelId: channelId,
+          mentionMessageTs: event.ts,
+          dmChannelId,
+          dmMessageTs: statusMsg.ts!,
           createdAt: Date.now(),
-        };
-        storePlan(planData);
-
-        await client.chat.update({
-          channel: dmChannelId!,
-          ts: dmMessageTs!,
-          text: `Plan: ${plan.summary}`,
-          blocks: planBlocks(plan, planId),
         });
       }
     } catch (error) {
       logger.error("Failed to process @mention agent task:", error);
-      if (dmChannelId) {
-        const errorMessage =
-          error instanceof ApiKeyMissingError
-            ? "OpenAI API key is not configured."
-            : `Failed to generate plan: ${error instanceof Error ? error.message : "unknown error"}`;
-        const errorBlocks = [
-          {
-            type: "section" as const,
-            text: { type: "mrkdwn" as const, text: `:x: ${errorMessage}` },
-          },
-        ];
-        try {
-          if (dmMessageTs) {
-            await client.chat.update({
-              channel: dmChannelId,
-              ts: dmMessageTs,
-              text: errorMessage,
-              blocks: errorBlocks,
-            });
-          } else {
-            await client.chat.postMessage({
-              channel: dmChannelId,
-              text: errorMessage,
-              blocks: errorBlocks,
-            });
-          }
-        } catch (notifyError) {
-          logger.error("Failed to notify user of error:", notifyError);
-        }
-      } else {
-        try {
-          await client.chat.postEphemeral({
-            channel: channelId,
-            user: userId,
-            text: `:x: Failed to process task: ${error instanceof Error ? error.message : "unknown error"}`,
-          });
-        } catch {
-          // best-effort
-        }
+      outcomeReaction = "x";
+      try {
+        await client.chat.postEphemeral({
+          channel: channelId,
+          user: userId,
+          text: sanitizeSlackOutput(
+            `:x: ${error instanceof ApiKeyMissingError ? "OpenAI API key is not configured." : `Failed to process task: ${error instanceof Error ? error.message : "unknown error"}`}`,
+          ),
+          thread_ts: threadTs,
+        });
+      } catch {
+        // best-effort
       }
     } finally {
       markInactive(userId);
-      await removeEyes();
+      if (removeEyesOnFinally) {
+        await removeReaction(client, channelId, event.ts, "eyes");
+      }
+      if (removeGearOnFinally) {
+        await removeReaction(client, channelId, event.ts, "gear");
+      }
+      if (outcomeReaction) {
+        await addReaction(client, channelId, event.ts, outcomeReaction);
+      }
     }
   });
 }

@@ -163,8 +163,13 @@ const SUBMIT_PLAN_TOOL: ChatCompletionTool = {
             required: ["description", "toolName", "reasoning"],
           },
         },
+        requiresApproval: {
+          type: "boolean",
+          description:
+            "Whether the user should review and approve the plan before execution. Set to true for complex, multi-step, or potentially impactful tasks (e.g. posting multiple messages, editing existing content). Set to false for simple, low-risk tasks (e.g. replying to a single message, posting one message).",
+        },
       },
-      required: ["summary", "steps"],
+      required: ["summary", "steps", "requiresApproval"],
     },
   },
 };

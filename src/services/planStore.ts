@@ -12,6 +12,8 @@ export interface PlanData {
   threadTs?: string;
   dmChannelId: string;
   dmMessageTs: string;
+  mentionChannelId?: string;
+  mentionMessageTs?: string;
   createdAt: number;
 }
 

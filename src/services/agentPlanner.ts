@@ -26,6 +26,7 @@ export interface PlanStep {
 export interface AgentPlan {
   summary: string;
   steps: PlanStep[];
+  requiresApproval: boolean;
 }
 
 export interface ExecutionResult {
@@ -90,7 +91,7 @@ function sanitizeForPrompt(text: string): string {
   return text.replace(/<\//g, "<\\/");
 }
 
-function parsePlanFromArgs(args: Record<string, unknown>): AgentPlan {
+export function parsePlanFromArgs(args: Record<string, unknown>): AgentPlan {
   const summary = typeof args.summary === "string" ? args.summary : "No summary provided";
   const steps: PlanStep[] = [];
 
@@ -112,7 +113,9 @@ function parsePlanFromArgs(args: Record<string, unknown>): AgentPlan {
     }
   }
 
-  return { summary, steps };
+  const requiresApproval =
+    typeof args.requiresApproval === "boolean" ? args.requiresApproval : true;
+  return { summary, steps, requiresApproval };
 }
 
 // --- Public API ---
