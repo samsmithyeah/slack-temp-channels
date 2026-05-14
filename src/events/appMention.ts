@@ -158,6 +158,8 @@ export function registerAppMentionHandler(app: App): void {
           plan,
           planMessages,
           threadTs,
+          mentionChannelId: channelId,
+          mentionMessageTs: event.ts,
           dmChannelId,
           dmMessageTs: statusMsg.ts!,
           createdAt: Date.now(),

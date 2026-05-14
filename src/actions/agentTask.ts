@@ -109,7 +109,7 @@ interface ExecuteAndNotifyParams {
   threadTs?: string;
 }
 
-async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<void> {
+async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<ExecutionResult> {
   const {
     openai,
     client,
@@ -148,6 +148,8 @@ async function executeAndNotify(params: ExecuteAndNotifyParams): Promise<void> {
     text: failed ? "Agent task failed" : "Agent task complete",
     blocks: resultBlocks(result, executionId, failed),
   });
+
+  return result;
 }
 
 // --- Registration ---
@@ -385,8 +387,9 @@ export function registerAgentTaskHandlers(app: App): void {
     }
 
     markActive(planData.userId);
+    let outcomeReaction: string | undefined;
     try {
-      await executeAndNotify({
+      const result = await executeAndNotify({
         openai: getOpenAIClient(),
         client,
         channelId: planData.channelId,
@@ -397,8 +400,16 @@ export function registerAgentTaskHandlers(app: App): void {
         planMessages: planData.planMessages,
         threadTs: planData.threadTs,
       });
+      if (result.stepsFailed === 0) {
+        outcomeReaction = "white_check_mark";
+      } else if (result.stepsCompleted > 0) {
+        outcomeReaction = "warning";
+      } else {
+        outcomeReaction = "x";
+      }
     } catch (error) {
       logger.error("Agent execution failed:", error);
+      outcomeReaction = "x";
       const reason = error instanceof Error ? error.message : "unknown error";
       try {
         await client.chat.update({
@@ -420,6 +431,17 @@ export function registerAgentTaskHandlers(app: App): void {
       }
     } finally {
       markInactive(planData.userId);
+      if (outcomeReaction && planData.mentionChannelId && planData.mentionMessageTs) {
+        try {
+          await client.reactions.add({
+            channel: planData.mentionChannelId,
+            timestamp: planData.mentionMessageTs,
+            name: outcomeReaction,
+          });
+        } catch {
+          // best-effort
+        }
+      }
     }
 
     deletePlan(planId);
