@@ -154,6 +154,7 @@ export function registerAppMentionHandler(app: App): void {
       }
     } catch (error) {
       logger.error("Failed to process @mention agent task:", error);
+      outcomeReaction = "x";
       try {
         await client.chat.postEphemeral({
           channel: channelId,
