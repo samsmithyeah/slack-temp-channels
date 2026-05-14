@@ -7,6 +7,7 @@ import { createPlanId, storePlan } from "../services/planStore";
 import { isChannelMember } from "../utils";
 
 // Deduplicate Slack event retries using event_ts (kept for 60s)
+const MAX_RECENT_EVENTS = 10_000;
 const recentEvents = new Set<string>();
 
 // --- Registration ---
@@ -15,6 +16,7 @@ export function registerAppMentionHandler(app: App): void {
   app.event("app_mention", async ({ event, client, logger }) => {
     const eventId = event.event_ts ?? event.ts;
     if (recentEvents.has(eventId)) return;
+    if (recentEvents.size >= MAX_RECENT_EVENTS) recentEvents.clear();
     recentEvents.add(eventId);
     setTimeout(() => recentEvents.delete(eventId), 60_000);
 
@@ -77,7 +79,7 @@ export function registerAppMentionHandler(app: App): void {
 
     // Mark active immediately to prevent duplicate event deliveries from racing
     markActive(userId);
-    let executed: boolean | null = null;
+    let outcomeReaction: string | null = null;
     try {
       // React with eyes to acknowledge the mention
       try {
@@ -104,6 +106,9 @@ export function registerAppMentionHandler(app: App): void {
       const shouldYolo = isYolo || (!plan.requiresApproval && plan.steps.length <= 2);
 
       if (shouldYolo) {
+        logger.info(
+          `Auto-executing plan (yolo=${isYolo}, requiresApproval=${plan.requiresApproval}, steps=${plan.steps.length})`,
+        );
         const result = await executePlan(
           openai,
           client,
@@ -114,7 +119,13 @@ export function registerAppMentionHandler(app: App): void {
           threadTs,
           userId,
         );
-        executed = result.stepsCompleted > 0 || result.stepsFailed === 0;
+        if (result.stepsFailed === 0) {
+          outcomeReaction = "white_check_mark";
+        } else if (result.stepsCompleted > 0) {
+          outcomeReaction = "warning";
+        } else {
+          outcomeReaction = "x";
+        }
         if (result.summary) {
           try {
             await client.chat.postEphemeral({
@@ -166,12 +177,12 @@ export function registerAppMentionHandler(app: App): void {
     } finally {
       markInactive(userId);
       await removeEyes();
-      if (executed !== null) {
+      if (outcomeReaction) {
         try {
           await client.reactions.add({
             channel: channelId,
             timestamp: event.ts,
-            name: executed ? "white_check_mark" : "x",
+            name: outcomeReaction,
           });
         } catch {
           // best-effort
