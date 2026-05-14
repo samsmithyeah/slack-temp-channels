@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parsePlanFromArgs } from "../../src/services/agentPlanner";
+import { getOutcomeReaction, shouldYolo } from "../../src/services/agentReactions";
 
 describe("parsePlanFromArgs", () => {
   it("parses a complete plan with requiresApproval: false", () => {
@@ -82,35 +83,69 @@ describe("parsePlanFromArgs", () => {
   });
 });
 
-describe("shouldYolo logic", () => {
-  function shouldYolo(isYolo: boolean, requiresApproval: boolean, stepCount: number): boolean {
-    return isYolo || (!requiresApproval && stepCount <= 2);
+describe("shouldYolo", () => {
+  function makePlan(requiresApproval: boolean, stepCount: number) {
+    return {
+      summary: "test",
+      steps: Array.from({ length: stepCount }, (_, i) => ({
+        description: `Step ${i}`,
+        toolName: "reply_to_message",
+        reasoning: "r",
+      })),
+      requiresApproval,
+    };
   }
 
   it("returns true when explicit yolo keyword is present", () => {
-    expect(shouldYolo(true, true, 5)).toBe(true);
+    expect(shouldYolo(true, makePlan(true, 5))).toBe(true);
   });
 
   it("returns true for simple plan (no approval, <=2 steps)", () => {
-    expect(shouldYolo(false, false, 1)).toBe(true);
-    expect(shouldYolo(false, false, 2)).toBe(true);
+    expect(shouldYolo(false, makePlan(false, 1))).toBe(true);
+    expect(shouldYolo(false, makePlan(false, 2))).toBe(true);
   });
 
   it("returns false for simple plan with >2 steps", () => {
-    expect(shouldYolo(false, false, 3)).toBe(false);
+    expect(shouldYolo(false, makePlan(false, 3))).toBe(false);
   });
 
   it("returns false when requiresApproval is true", () => {
-    expect(shouldYolo(false, true, 1)).toBe(false);
-    expect(shouldYolo(false, true, 2)).toBe(false);
+    expect(shouldYolo(false, makePlan(true, 1))).toBe(false);
+    expect(shouldYolo(false, makePlan(true, 2))).toBe(false);
   });
 
   it("returns true for zero-step plan that doesn't require approval", () => {
-    expect(shouldYolo(false, false, 0)).toBe(true);
+    expect(shouldYolo(false, makePlan(false, 0))).toBe(true);
   });
 
   it("overrides requiresApproval and step count with explicit yolo", () => {
-    expect(shouldYolo(true, true, 10)).toBe(true);
-    expect(shouldYolo(true, false, 10)).toBe(true);
+    expect(shouldYolo(true, makePlan(true, 10))).toBe(true);
+    expect(shouldYolo(true, makePlan(false, 10))).toBe(true);
+  });
+});
+
+describe("getOutcomeReaction", () => {
+  it("returns checkmark when all steps succeed", () => {
+    expect(
+      getOutcomeReaction({ stepsCompleted: 3, stepsFailed: 0, details: [], summary: "" }),
+    ).toBe("white_check_mark");
+  });
+
+  it("returns checkmark for empty plan (0 steps, 0 failures)", () => {
+    expect(
+      getOutcomeReaction({ stepsCompleted: 0, stepsFailed: 0, details: [], summary: "" }),
+    ).toBe("white_check_mark");
+  });
+
+  it("returns warning for partial success", () => {
+    expect(
+      getOutcomeReaction({ stepsCompleted: 2, stepsFailed: 1, details: [], summary: "" }),
+    ).toBe("warning");
+  });
+
+  it("returns x when all steps fail", () => {
+    expect(
+      getOutcomeReaction({ stepsCompleted: 0, stepsFailed: 2, details: [], summary: "" }),
+    ).toBe("x");
   });
 });

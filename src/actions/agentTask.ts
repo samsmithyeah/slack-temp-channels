@@ -11,6 +11,7 @@ import {
   executePlan,
   generatePlan,
 } from "../services/agentPlanner";
+import { addReaction, getOutcomeReaction, removeReaction } from "../services/agentReactions";
 import { sanitizeSlackOutput } from "../services/agentTools";
 import {
   fetchChannelMessages,
@@ -386,6 +387,12 @@ export function registerAgentTaskHandlers(app: App): void {
       logger.error("Failed to update DM to executing state:", error);
     }
 
+    // Swap eyes for cog on the original mention while executing
+    if (planData.mentionChannelId && planData.mentionMessageTs) {
+      await removeReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "eyes");
+      await addReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "gear");
+    }
+
     markActive(planData.userId);
     let outcomeReaction: string | undefined;
     try {
@@ -400,13 +407,7 @@ export function registerAgentTaskHandlers(app: App): void {
         planMessages: planData.planMessages,
         threadTs: planData.threadTs,
       });
-      if (result.stepsFailed === 0) {
-        outcomeReaction = "white_check_mark";
-      } else if (result.stepsCompleted > 0) {
-        outcomeReaction = "warning";
-      } else {
-        outcomeReaction = "x";
-      }
+      outcomeReaction = getOutcomeReaction(result);
     } catch (error) {
       logger.error("Agent execution failed:", error);
       outcomeReaction = "x";
@@ -431,15 +432,15 @@ export function registerAgentTaskHandlers(app: App): void {
       }
     } finally {
       markInactive(planData.userId);
-      if (outcomeReaction && planData.mentionChannelId && planData.mentionMessageTs) {
-        try {
-          await client.reactions.add({
-            channel: planData.mentionChannelId,
-            timestamp: planData.mentionMessageTs,
-            name: outcomeReaction,
-          });
-        } catch {
-          // best-effort
+      if (planData.mentionChannelId && planData.mentionMessageTs) {
+        await removeReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "gear");
+        if (outcomeReaction) {
+          await addReaction(
+            client,
+            planData.mentionChannelId,
+            planData.mentionMessageTs,
+            outcomeReaction,
+          );
         }
       }
     }
@@ -476,6 +477,10 @@ export function registerAgentTaskHandlers(app: App): void {
       });
     } catch (error) {
       logger.error("Failed to update DM for declined plan:", error);
+    }
+
+    if (planData.mentionChannelId && planData.mentionMessageTs) {
+      await removeReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "eyes");
     }
 
     deletePlan(planId);

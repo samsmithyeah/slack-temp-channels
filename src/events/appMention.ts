@@ -2,6 +2,12 @@ import type { App } from "@slack/bolt";
 import { planBlocks } from "../agentBlocks";
 import { isUserActive, markActive, markInactive } from "../services/activeTaskTracker";
 import { executePlan, generatePlan } from "../services/agentPlanner";
+import {
+  addReaction,
+  getOutcomeReaction,
+  removeReaction,
+  shouldYolo,
+} from "../services/agentReactions";
 import { ApiKeyMissingError, getOpenAIClient } from "../services/openai";
 import { createPlanId, storePlan } from "../services/planStore";
 import { isChannelMember } from "../utils";
@@ -65,32 +71,13 @@ export function registerAppMentionHandler(app: App): void {
     // Detect thread scope
     const threadTs = event.thread_ts;
 
-    const removeEyes = async () => {
-      try {
-        await client.reactions.remove({
-          channel: channelId,
-          timestamp: event.ts,
-          name: "eyes",
-        });
-      } catch {
-        // best-effort
-      }
-    };
-
     // Mark active immediately to prevent duplicate event deliveries from racing
     markActive(userId);
+    let removeEyesOnFinally = true;
     let outcomeReaction: string | null = null;
     try {
-      // React with eyes to acknowledge the mention
-      try {
-        await client.reactions.add({
-          channel: channelId,
-          timestamp: event.ts,
-          name: "eyes",
-        });
-      } catch (error) {
-        logger.error("Failed to add eyes reaction:", error);
-      }
+      // React with eyes to acknowledge the mention (stays until execution starts)
+      await addReaction(client, channelId, event.ts, "eyes");
 
       const openai = getOpenAIClient();
       const planResult = await generatePlan(
@@ -103,12 +90,15 @@ export function registerAppMentionHandler(app: App): void {
       );
       const { plan, planMessages } = planResult;
 
-      const shouldYolo = isYolo || (!plan.requiresApproval && plan.steps.length <= 2);
-
-      if (shouldYolo) {
+      if (shouldYolo(isYolo, plan)) {
         logger.info(
           `Auto-executing plan (yolo=${isYolo}, requiresApproval=${plan.requiresApproval}, steps=${plan.steps.length})`,
         );
+        // Swap eyes for cog during execution
+        await removeReaction(client, channelId, event.ts, "eyes");
+        removeEyesOnFinally = false;
+        await addReaction(client, channelId, event.ts, "gear");
+
         const result = await executePlan(
           openai,
           client,
@@ -119,13 +109,7 @@ export function registerAppMentionHandler(app: App): void {
           threadTs,
           userId,
         );
-        if (result.stepsFailed === 0) {
-          outcomeReaction = "white_check_mark";
-        } else if (result.stepsCompleted > 0) {
-          outcomeReaction = "warning";
-        } else {
-          outcomeReaction = "x";
-        }
+        outcomeReaction = getOutcomeReaction(result);
         if (result.summary) {
           try {
             await client.chat.postEphemeral({
@@ -138,6 +122,9 @@ export function registerAppMentionHandler(app: App): void {
           }
         }
       } else {
+        // Eyes stay until user accepts/declines — don't remove in finally
+        removeEyesOnFinally = false;
+
         // Open DM and show plan for approval
         const dm = await client.conversations.open({ users: userId });
         if (!dm.channel?.id) throw new Error("channel ID missing");
@@ -178,17 +165,13 @@ export function registerAppMentionHandler(app: App): void {
       }
     } finally {
       markInactive(userId);
-      await removeEyes();
+      if (removeEyesOnFinally) {
+        await removeReaction(client, channelId, event.ts, "eyes");
+      }
+      // Swap cog for outcome reaction (cog only present in YOLO path)
+      await removeReaction(client, channelId, event.ts, "gear");
       if (outcomeReaction) {
-        try {
-          await client.reactions.add({
-            channel: channelId,
-            timestamp: event.ts,
-            name: outcomeReaction,
-          });
-        } catch {
-          // best-effort
-        }
+        await addReaction(client, channelId, event.ts, outcomeReaction);
       }
     }
   });
