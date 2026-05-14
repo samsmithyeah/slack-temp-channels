@@ -2,7 +2,7 @@ import type { App } from "@slack/bolt";
 import { planBlocks } from "../agentBlocks";
 import { isUserActive, markActive, markInactive } from "../services/activeTaskTracker";
 import { executePlan, generatePlan } from "../services/agentPlanner";
-import { getOpenAIClient } from "../services/openai";
+import { ApiKeyMissingError, getOpenAIClient } from "../services/openai";
 import { createPlanId, storePlan } from "../services/planStore";
 import { isChannelMember } from "../utils";
 
@@ -148,7 +148,7 @@ export function registerAppMentionHandler(app: App): void {
         await client.chat.postEphemeral({
           channel: channelId,
           user: userId,
-          text: `:x: Failed to process task: ${error instanceof Error ? error.message : "unknown error"}`,
+          text: `:x: ${error instanceof ApiKeyMissingError ? "OpenAI API key is not configured." : `Failed to process task: ${error instanceof Error ? error.message : "unknown error"}`}`,
         });
       } catch {
         // best-effort
