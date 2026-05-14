@@ -115,6 +115,17 @@ export function registerAppMentionHandler(app: App): void {
           userId,
         );
         succeeded = result.stepsCompleted > 0 || result.stepsFailed === 0;
+        if (succeeded && result.summary) {
+          try {
+            await client.chat.postEphemeral({
+              channel: channelId,
+              user: userId,
+              text: result.summary,
+            });
+          } catch {
+            // best-effort
+          }
+        }
       } else {
         // Open DM and show plan for approval
         const dm = await client.conversations.open({ users: userId });
