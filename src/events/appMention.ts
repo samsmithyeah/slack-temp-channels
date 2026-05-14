@@ -119,6 +119,7 @@ export function registerAppMentionHandler(app: App): void {
               channel: channelId,
               user: userId,
               text: sanitizeSlackOutput(result.summary),
+              thread_ts: threadTs,
             });
           } catch {
             // best-effort
@@ -165,6 +166,7 @@ export function registerAppMentionHandler(app: App): void {
           text: sanitizeSlackOutput(
             `:x: ${error instanceof ApiKeyMissingError ? "OpenAI API key is not configured." : `Failed to process task: ${error instanceof Error ? error.message : "unknown error"}`}`,
           ),
+          thread_ts: threadTs,
         });
       } catch {
         // best-effort
