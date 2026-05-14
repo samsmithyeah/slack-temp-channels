@@ -8,6 +8,7 @@ import {
   removeReaction,
   shouldYolo,
 } from "../services/agentReactions";
+import { sanitizeSlackOutput } from "../services/agentTools";
 import { ApiKeyMissingError, getOpenAIClient } from "../services/openai";
 import { createPlanId, storePlan } from "../services/planStore";
 import { isChannelMember } from "../utils";
@@ -117,7 +118,7 @@ export function registerAppMentionHandler(app: App): void {
             await client.chat.postEphemeral({
               channel: channelId,
               user: userId,
-              text: result.summary,
+              text: sanitizeSlackOutput(result.summary),
             });
           } catch {
             // best-effort
@@ -161,7 +162,9 @@ export function registerAppMentionHandler(app: App): void {
         await client.chat.postEphemeral({
           channel: channelId,
           user: userId,
-          text: `:x: ${error instanceof ApiKeyMissingError ? "OpenAI API key is not configured." : `Failed to process task: ${error instanceof Error ? error.message : "unknown error"}`}`,
+          text: sanitizeSlackOutput(
+            `:x: ${error instanceof ApiKeyMissingError ? "OpenAI API key is not configured." : `Failed to process task: ${error instanceof Error ? error.message : "unknown error"}`}`,
+          ),
         });
       } catch {
         // best-effort
