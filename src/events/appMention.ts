@@ -77,6 +77,7 @@ export function registerAppMentionHandler(app: App): void {
 
     // Mark active immediately to prevent duplicate event deliveries from racing
     markActive(userId);
+    let succeeded = false;
     try {
       // React with eyes to acknowledge the mention
       try {
@@ -100,10 +101,10 @@ export function registerAppMentionHandler(app: App): void {
       );
       const { plan, planMessages } = planResult;
 
-      const shouldYolo = isYolo || !plan.requiresApproval;
+      const shouldYolo = isYolo || (!plan.requiresApproval && plan.steps.length <= 2);
 
       if (shouldYolo) {
-        await executePlan(
+        const result = await executePlan(
           openai,
           client,
           channelId,
@@ -113,6 +114,7 @@ export function registerAppMentionHandler(app: App): void {
           threadTs,
           userId,
         );
+        succeeded = result.stepsCompleted > 0 || result.stepsFailed === 0;
       } else {
         // Open DM and show plan for approval
         const dm = await client.conversations.open({ users: userId });
@@ -138,6 +140,7 @@ export function registerAppMentionHandler(app: App): void {
           dmMessageTs: statusMsg.ts!,
           createdAt: Date.now(),
         });
+        succeeded = true;
       }
     } catch (error) {
       logger.error("Failed to process @mention agent task:", error);
@@ -153,6 +156,15 @@ export function registerAppMentionHandler(app: App): void {
     } finally {
       markInactive(userId);
       await removeEyes();
+      try {
+        await client.reactions.add({
+          channel: channelId,
+          timestamp: event.ts,
+          name: succeeded ? "white_check_mark" : "x",
+        });
+      } catch {
+        // best-effort
+      }
     }
   });
 }
