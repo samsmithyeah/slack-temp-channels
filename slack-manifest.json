@@ -37,6 +37,7 @@
         "commands",
         "users:read",
         "groups:read",
+        "files:read",
         "files:write",
         "im:write",
         "app_mentions:read"

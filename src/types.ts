@@ -3,5 +3,5 @@ export interface ActionBody {
   trigger_id: string;
   user?: { id: string };
   channel?: { id: string };
-  actions?: Array<{ type?: string; value?: string }>;
+  actions?: Array<{ type?: string; value?: string; action_id?: string }>;
 }

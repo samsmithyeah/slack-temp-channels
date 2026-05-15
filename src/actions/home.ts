@@ -11,6 +11,7 @@ import {
   LABEL_BROADCAST_CLOSE,
   LABEL_CREATE,
   LABEL_EXPORT,
+  LABEL_EXPORT_WITH_FILES,
 } from "../constants";
 import { broadcastModal } from "../modals/broadcast";
 import { createChannelModal } from "../modals/create";
@@ -171,12 +172,20 @@ function channelSectionBlocks(
     } as unknown as KnownBlock);
 
     if (showExport) {
-      elements.push({
-        type: "button",
-        text: { type: "plain_text", text: LABEL_EXPORT },
-        action_id: `home_export_${ch.id}`,
-        value: `${ch.id}:${ch.name}`,
-      } as unknown as KnownBlock);
+      elements.push(
+        {
+          type: "button",
+          text: { type: "plain_text", text: LABEL_EXPORT },
+          action_id: `home_export_${ch.id}`,
+          value: `${ch.id}:${ch.name}`,
+        } as unknown as KnownBlock,
+        {
+          type: "button",
+          text: { type: "plain_text", text: LABEL_EXPORT_WITH_FILES },
+          action_id: `home_export_files_${ch.id}`,
+          value: `${ch.id}:${ch.name}`,
+        } as unknown as KnownBlock,
+      );
     }
 
     if (showClose) {

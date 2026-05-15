@@ -1,4 +1,5 @@
 import type { WebClient } from "@slack/web-api";
+import type { SlackFile } from "./fileDownloader";
 
 const DEFAULT_MAX_PAGES = 3;
 export const EXPORT_MAX_PAGES = 100;
@@ -12,6 +13,7 @@ export interface RawMessage {
   ts?: string;
   reply_count?: number;
   replies?: RawMessage[];
+  files?: SlackFile[];
 }
 
 export async function fetchChannelMessages(
@@ -116,18 +118,44 @@ function formatTimestamp(ts: string): string {
     .replace(/\.\d+Z$/, " UTC");
 }
 
-function formatMessageLine(msg: RawMessage, userNames: Map<string, string>): string {
-  const name = msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown";
-  const time = msg.ts ? formatTimestamp(msg.ts) : "";
-  return `[${time}] ${name}: ${sanitizeText(msg.text)}`;
+function formatFileRefs(files?: SlackFile[]): string {
+  if (!files?.length) return "";
+  return files.map((f) => ` [file: ${f.name}]`).join("");
 }
 
-function toMessageJson(msg: RawMessage, userNames: Map<string, string>) {
+function formatFileRefsWithPaths(files?: SlackFile[]): string {
+  if (!files?.length) return "";
+  return files.map((f) => ` [file: files/${f.id}_${f.name}]`).join("");
+}
+
+function formatMessageLine(
+  msg: RawMessage,
+  userNames: Map<string, string>,
+  includeFilePaths = false,
+): string {
+  const name = msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown";
+  const time = msg.ts ? formatTimestamp(msg.ts) : "";
+  const fileRefs = includeFilePaths
+    ? formatFileRefsWithPaths(msg.files)
+    : formatFileRefs(msg.files);
+  return `[${time}] ${name}: ${sanitizeText(msg.text)}${fileRefs}`;
+}
+
+function toMessageJson(msg: RawMessage, userNames: Map<string, string>, includeFilePaths = false) {
   return {
     ts: msg.ts ?? "",
     user: msg.user ?? "",
     userName: msg.user ? (userNames.get(msg.user) ?? msg.user) : "Unknown",
     text: msg.text ?? "",
+    ...(msg.files?.length
+      ? {
+          files: msg.files.map((f) => ({
+            id: f.id,
+            name: f.name,
+            ...(includeFilePaths ? { path: `files/${f.id}_${f.name}` } : {}),
+          })),
+        }
+      : {}),
   };
 }
 
@@ -135,17 +163,19 @@ export function formatTranscript(
   channelName: string,
   messages: RawMessage[],
   userNames: Map<string, string>,
+  options?: { includeFilePaths?: boolean },
 ): string {
+  const filePaths = options?.includeFilePaths ?? false;
   const lines: string[] = [`# ${channelName}`, ""];
 
   for (const msg of messages) {
     if (!isUserMessage(msg)) continue;
-    lines.push(formatMessageLine(msg, userNames));
+    lines.push(formatMessageLine(msg, userNames, filePaths));
 
     if (msg.replies) {
       for (const reply of msg.replies) {
         if (!isUserMessage(reply)) continue;
-        lines.push(`  ↳ ${formatMessageLine(reply, userNames)}`);
+        lines.push(`  ↳ ${formatMessageLine(reply, userNames, filePaths)}`);
       }
     }
   }
@@ -158,19 +188,21 @@ export function formatTranscriptJson(
   channelId: string,
   messages: RawMessage[],
   userNames: Map<string, string>,
+  options?: { includeFilePaths?: boolean },
 ): string {
+  const filePaths = options?.includeFilePaths ?? false;
   const filtered = messages.filter(isUserMessage);
 
   const data = {
     channel: { id: channelId, name: channelName },
     exportedAt: new Date().toISOString(),
     messages: filtered.map((msg) => ({
-      ...toMessageJson(msg, userNames),
+      ...toMessageJson(msg, userNames, filePaths),
       ...(msg.replies?.length
         ? {
             replies: msg.replies
               .filter(isUserMessage)
-              .map((reply) => toMessageJson(reply, userNames)),
+              .map((reply) => toMessageJson(reply, userNames, filePaths)),
           }
         : {}),
     })),
