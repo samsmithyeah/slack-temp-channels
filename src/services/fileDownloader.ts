@@ -3,7 +3,7 @@ import { ZipArchive } from "archiver";
 
 export interface SlackFile {
   id: string;
-  name: string;
+  name?: string;
   size?: number;
   url_private_download?: string;
 }
@@ -37,8 +37,8 @@ export async function downloadFile(token: string, file: SlackFile): Promise<Buff
   }
 }
 
-function sanitizeFileName(name: string): string {
-  return name.replace(/[/\\]/g, "_").replace(/\.\./g, "_");
+function sanitizeFileName(name?: string): string {
+  return (name ?? "file").replace(/[/\\]/g, "_").replace(/\.\./g, "_");
 }
 
 export function archivePath(file: SlackFile): string {
