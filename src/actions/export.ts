@@ -180,6 +180,11 @@ export function registerExportAction(app: App): void {
       }
 
       try {
+        await client.chat.postMessage({
+          channel: dmChannelId,
+          text: `Preparing export of #${channelName} with files — this may take a moment...`,
+        });
+
         const messages: RawMessage[] = await fetchChannelMessages(
           client,
           channelId,
@@ -193,11 +198,6 @@ export function registerExportAction(app: App): void {
           });
           return;
         }
-
-        await client.chat.postMessage({
-          channel: dmChannelId,
-          text: `Preparing export of #${channelName} with files — this may take a moment...`,
-        });
 
         const userNames = await resolveUserNames(client, extractUserIds(messages));
 
