@@ -270,7 +270,7 @@ describe("generateSummary", () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "gpt-5.2",
+        model: "gpt-5.5",
       }),
     );
   });
