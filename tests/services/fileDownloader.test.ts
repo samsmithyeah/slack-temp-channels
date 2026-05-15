@@ -8,6 +8,8 @@ import {
   type SlackFile,
 } from "../../src/services/fileDownloader";
 
+const mockHeaders = { get: () => null };
+
 function makeFile(overrides: Partial<SlackFile> = {}): SlackFile {
   return {
     id: "F001",
@@ -25,6 +27,7 @@ describe("downloadFile", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
+        headers: mockHeaders,
         arrayBuffer: () =>
           Promise.resolve(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)),
       }),
@@ -163,6 +166,7 @@ describe("downloadAll", () => {
         const data = Buffer.from(`data for ${url}`);
         return Promise.resolve({
           ok: true,
+          headers: mockHeaders,
           arrayBuffer: () =>
             Promise.resolve(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)),
         });
@@ -200,6 +204,7 @@ describe("downloadAll", () => {
         .mockResolvedValueOnce({ ok: false, status: 404 })
         .mockResolvedValueOnce({
           ok: true,
+          headers: mockHeaders,
           arrayBuffer: () => Promise.resolve(Buffer.from("ok").buffer),
         }),
     );

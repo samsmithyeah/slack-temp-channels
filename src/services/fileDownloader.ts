@@ -26,6 +26,9 @@ export async function downloadFile(token: string, file: SlackFile): Promise<Buff
     });
     if (!response.ok) return null;
 
+    const contentLength = response.headers.get("content-length");
+    if (contentLength && Number.parseInt(contentLength, 10) > MAX_FILE_SIZE) return null;
+
     const buffer = Buffer.from(await response.arrayBuffer());
     if (buffer.length > MAX_FILE_SIZE) return null;
     return buffer;
