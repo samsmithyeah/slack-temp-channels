@@ -211,137 +211,136 @@ export function registerAgentTaskHandlers(app: App): void {
     const isYolo = selectedOptions.includes("yolo");
     const includeTranscript = selectedOptions.includes("include_transcript");
 
-    if (!(await isChannelMember(client, channelId, userId))) return;
+    void (async () => {
+      if (!(await isChannelMember(client, channelId, userId))) return;
 
-    if (isUserActive(userId)) {
-      try {
-        const dm = await client.conversations.open({ users: userId });
-        if (dm.channel?.id) {
-          await client.chat.postMessage({ channel: dm.channel.id, text: BUSY_TEXT });
+      if (isUserActive(userId)) {
+        try {
+          const dm = await client.conversations.open({ users: userId });
+          if (dm.channel?.id) {
+            await client.chat.postMessage({ channel: dm.channel.id, text: BUSY_TEXT });
+          }
+        } catch {
+          // best-effort
         }
-      } catch {
-        // best-effort
-      }
-      return;
-    }
-
-    // Open DM channel with the user
-    let dmChannelId: string;
-    try {
-      const dm = await client.conversations.open({ users: userId });
-      if (!dm.channel?.id) {
-        logger.error("Failed to open DM: channel ID missing");
         return;
       }
-      dmChannelId = dm.channel.id;
-    } catch (error) {
-      logger.error("Failed to open DM for agent task:", error);
-      return;
-    }
 
-    // Send initial status message
-    let statusMsg: Awaited<ReturnType<typeof client.chat.postMessage>>;
-    try {
-      statusMsg = await client.chat.postMessage({
-        channel: dmChannelId,
-        text: ":hourglass_flowing_sand: Generating plan for your task...",
-      });
-    } catch (error) {
-      logger.error("Failed to send status DM:", error);
-      return;
-    }
-
-    markActive(userId);
-    try {
-      let transcriptContext: string | undefined;
-      if (includeTranscript) {
-        const messages = await fetchChannelMessages(client, channelId);
-        const userIds = [...new Set(messages.map((m) => m.user).filter(Boolean))] as string[];
-        const userNames = await resolveUserNames(client, userIds);
-        const info = await client.conversations.info({ channel: channelId });
-        const channelName = (info.channel as { name?: string })?.name ?? channelId;
-        transcriptContext = formatTranscript(channelName, messages, userNames);
+      let dmChannelId: string;
+      try {
+        const dm = await client.conversations.open({ users: userId });
+        if (!dm.channel?.id) {
+          logger.error("Failed to open DM: channel ID missing");
+          return;
+        }
+        dmChannelId = dm.channel.id;
+      } catch (error) {
+        logger.error("Failed to open DM for agent task:", error);
+        return;
       }
 
-      const planResult = await generatePlan(
-        getOpenAIClient(),
-        client,
-        channelId,
-        taskDescription,
-        undefined,
-        undefined,
-        transcriptContext,
-      );
-      const { plan, planMessages } = planResult;
-
-      if (isYolo) {
-        await client.chat.update({
+      let statusMsg: Awaited<ReturnType<typeof client.chat.postMessage>>;
+      try {
+        statusMsg = await client.chat.postMessage({
           channel: dmChannelId,
-          ts: statusMsg.ts!,
-          text: `Executing plan: ${plan.summary}`,
-          blocks: [
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `:rocket: *YOLO mode* — executing plan immediately\n\n${plan.summary}`,
-              },
-            },
-          ],
+          text: ":hourglass_flowing_sand: Generating plan for your task...",
         });
+      } catch (error) {
+        logger.error("Failed to send status DM:", error);
+        return;
+      }
 
-        await executeAndNotify({
-          openai: getOpenAIClient(),
+      markActive(userId);
+      try {
+        let transcriptContext: string | undefined;
+        if (includeTranscript) {
+          const messages = await fetchChannelMessages(client, channelId);
+          const userIds = [...new Set(messages.map((m) => m.user).filter(Boolean))] as string[];
+          const userNames = await resolveUserNames(client, userIds);
+          const info = await client.conversations.info({ channel: channelId });
+          const channelName = (info.channel as { name?: string })?.name ?? channelId;
+          transcriptContext = formatTranscript(channelName, messages, userNames);
+        }
+
+        const planResult = await generatePlan(
+          getOpenAIClient(),
           client,
           channelId,
-          plan,
           taskDescription,
-          userId,
-          dmChannelId,
-          planMessages,
-        });
-      } else {
-        // Store plan and show approval DM
-        const planId = createPlanId();
-        const planData: PlanData = {
-          id: planId,
-          userId,
-          channelId,
-          taskDescription,
-          plan,
-          planMessages,
+          undefined,
+          undefined,
           transcriptContext,
-          dmChannelId,
-          dmMessageTs: statusMsg.ts!,
-          createdAt: Date.now(),
-        };
-        storePlan(planData);
+        );
+        const { plan, planMessages } = planResult;
 
-        await client.chat.update({
-          channel: dmChannelId,
-          ts: statusMsg.ts!,
-          text: `Plan: ${plan.summary}`,
-          blocks: planBlocks(plan, planId),
-        });
+        if (isYolo) {
+          await client.chat.update({
+            channel: dmChannelId,
+            ts: statusMsg.ts!,
+            text: `Executing plan: ${plan.summary}`,
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `:rocket: *YOLO mode* — executing plan immediately\n\n${plan.summary}`,
+                },
+              },
+            ],
+          });
+
+          await executeAndNotify({
+            openai: getOpenAIClient(),
+            client,
+            channelId,
+            plan,
+            taskDescription,
+            userId,
+            dmChannelId,
+            planMessages,
+          });
+        } else {
+          const planId = createPlanId();
+          const planData: PlanData = {
+            id: planId,
+            userId,
+            channelId,
+            taskDescription,
+            plan,
+            planMessages,
+            transcriptContext,
+            dmChannelId,
+            dmMessageTs: statusMsg.ts!,
+            createdAt: Date.now(),
+          };
+          storePlan(planData);
+
+          await client.chat.update({
+            channel: dmChannelId,
+            ts: statusMsg.ts!,
+            text: `Plan: ${plan.summary}`,
+            blocks: planBlocks(plan, planId),
+          });
+        }
+      } catch (error) {
+        logger.error("Failed to generate/execute agent plan:", error);
+        const errorMessage =
+          error instanceof ApiKeyMissingError
+            ? "OpenAI API key is not configured."
+            : `Failed to generate plan: ${error instanceof Error ? error.message : "unknown error"}`;
+        try {
+          await client.chat.update({
+            channel: dmChannelId,
+            ts: statusMsg.ts!,
+            text: errorMessage,
+          });
+        } catch (updateError) {
+          logger.error("Failed to update DM with error:", updateError);
+        }
+      } finally {
+        markInactive(userId);
       }
-    } catch (error) {
-      logger.error("Failed to generate/execute agent plan:", error);
-      const errorMessage =
-        error instanceof ApiKeyMissingError
-          ? "OpenAI API key is not configured."
-          : `Failed to generate plan: ${error instanceof Error ? error.message : "unknown error"}`;
-      try {
-        await client.chat.update({
-          channel: dmChannelId,
-          ts: statusMsg.ts!,
-          text: errorMessage,
-        });
-      } catch (updateError) {
-        logger.error("Failed to update DM with error:", updateError);
-      }
-    } finally {
-      markInactive(userId);
-    }
+    })().catch((err) => logger.error("Unhandled error in agent task background:", err));
   });
 
   // 4. Accept plan
@@ -356,96 +355,110 @@ export function registerAgentTaskHandlers(app: App): void {
       return;
     }
 
-    if (!(await isChannelMember(client, planData.channelId, planData.userId))) {
-      deletePlan(planId);
-      return;
-    }
-
-    if (isUserActive(planData.userId)) {
-      try {
-        await client.chat.postMessage({ channel: planData.dmChannelId, text: BUSY_TEXT });
-      } catch {
-        // best-effort
+    void (async () => {
+      if (!(await isChannelMember(client, planData.channelId, planData.userId))) {
+        deletePlan(planId);
+        return;
       }
-      return;
-    }
 
-    // Update DM to "executing..."
-    try {
-      await client.chat.update({
-        channel: planData.dmChannelId,
-        ts: planData.dmMessageTs,
-        text: ":gear: Executing plan...",
-        blocks: [
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: ":gear: Executing plan..." },
-          },
-        ],
-      });
-    } catch (error) {
-      logger.error("Failed to update DM to executing state:", error);
-    }
+      if (isUserActive(planData.userId)) {
+        try {
+          await client.chat.postMessage({ channel: planData.dmChannelId, text: BUSY_TEXT });
+        } catch {
+          // best-effort
+        }
+        return;
+      }
 
-    // Swap eyes for cog on the original mention while executing
-    if (planData.mentionChannelId && planData.mentionMessageTs) {
-      await removeReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "eyes");
-      await addReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "gear");
-    }
-
-    markActive(planData.userId);
-    let outcomeReaction: string | undefined;
-    try {
-      const result = await executeAndNotify({
-        openai: getOpenAIClient(),
-        client,
-        channelId: planData.channelId,
-        plan: planData.plan,
-        taskDescription: planData.taskDescription,
-        userId: planData.userId,
-        dmChannelId: planData.dmChannelId,
-        planMessages: planData.planMessages,
-        threadTs: planData.threadTs,
-      });
-      outcomeReaction = getOutcomeReaction(result);
-    } catch (error) {
-      logger.error("Agent execution failed:", error);
-      outcomeReaction = "x";
-      const reason = error instanceof Error ? error.message : "unknown error";
       try {
         await client.chat.update({
           channel: planData.dmChannelId,
           ts: planData.dmMessageTs,
-          text: `Execution failed: ${reason}`,
+          text: ":gear: Executing plan...",
           blocks: [
             {
               type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `:x: Execution failed: ${reason}. Please try again.`,
-              },
+              text: { type: "mrkdwn", text: ":gear: Executing plan..." },
             },
           ],
         });
-      } catch (updateError) {
-        logger.error("Failed to update DM with execution error:", updateError);
+      } catch (error) {
+        logger.error("Failed to update DM to executing state:", error);
       }
-    } finally {
-      markInactive(planData.userId);
-      if (planData.mentionChannelId && planData.mentionMessageTs) {
-        await removeReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "gear");
-        if (outcomeReaction) {
-          await addReaction(
+
+      try {
+        if (planData.mentionChannelId && planData.mentionMessageTs) {
+          await removeReaction(
             client,
             planData.mentionChannelId,
             planData.mentionMessageTs,
-            outcomeReaction,
+            "eyes",
           );
+          await addReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "gear");
+        }
+      } catch (error) {
+        logger.error("Failed to update reactions before execution:", error);
+      }
+
+      markActive(planData.userId);
+      let outcomeReaction: string | undefined;
+      try {
+        const result = await executeAndNotify({
+          openai: getOpenAIClient(),
+          client,
+          channelId: planData.channelId,
+          plan: planData.plan,
+          taskDescription: planData.taskDescription,
+          userId: planData.userId,
+          dmChannelId: planData.dmChannelId,
+          planMessages: planData.planMessages,
+          threadTs: planData.threadTs,
+        });
+        outcomeReaction = getOutcomeReaction(result);
+      } catch (error) {
+        logger.error("Agent execution failed:", error);
+        outcomeReaction = "x";
+        const reason = error instanceof Error ? error.message : "unknown error";
+        try {
+          await client.chat.update({
+            channel: planData.dmChannelId,
+            ts: planData.dmMessageTs,
+            text: `Execution failed: ${reason}`,
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: `:x: Execution failed: ${reason}. Please try again.`,
+                },
+              },
+            ],
+          });
+        } catch (updateError) {
+          logger.error("Failed to update DM with execution error:", updateError);
+        }
+      } finally {
+        markInactive(planData.userId);
+        if (planData.mentionChannelId && planData.mentionMessageTs) {
+          await removeReaction(
+            client,
+            planData.mentionChannelId,
+            planData.mentionMessageTs,
+            "gear",
+          );
+          if (outcomeReaction) {
+            await addReaction(
+              client,
+              planData.mentionChannelId,
+              planData.mentionMessageTs,
+              outcomeReaction,
+            );
+          }
         }
       }
-    }
 
-    deletePlan(planId);
+      deletePlan(planId);
+    })().catch((err) => logger.error("Unhandled error in plan execution background:", err));
   });
 
   // 5. Decline plan
@@ -610,73 +623,72 @@ export function registerAgentTaskHandlers(app: App): void {
 
     const refinement = view.state.values.refinement.refinement_input.value!;
 
-    if (isUserActive(planData.userId)) {
-      try {
-        await client.chat.postMessage({ channel: planData.dmChannelId, text: BUSY_TEXT });
-      } catch {
-        // best-effort
+    void (async () => {
+      if (isUserActive(planData.userId)) {
+        try {
+          await client.chat.postMessage({ channel: planData.dmChannelId, text: BUSY_TEXT });
+        } catch {
+          // best-effort
+        }
+        return;
       }
-      return;
-    }
 
-    // Update DM to loading state
-    try {
-      await client.chat.update({
-        channel: planData.dmChannelId,
-        ts: planData.dmMessageTs,
-        text: ":hourglass_flowing_sand: Re-generating plan...",
-        blocks: [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: ":hourglass_flowing_sand: Re-generating plan with your feedback...",
-            },
-          },
-        ],
-      });
-    } catch (error) {
-      logger.error("Failed to update DM to loading state:", error);
-    }
-
-    markActive(planData.userId);
-    try {
-      const planResult = await generatePlan(
-        getOpenAIClient(),
-        client,
-        planData.channelId,
-        planData.taskDescription,
-        refinement,
-        planData.threadTs,
-        planData.transcriptContext,
-      );
-      const { plan: newPlan, planMessages: newPlanMessages } = planResult;
-
-      // Update stored plan in place
-      planData.plan = newPlan;
-      planData.planMessages = newPlanMessages;
-      storePlan(planData);
-
-      // Update same DM message with new plan
-      await client.chat.update({
-        channel: planData.dmChannelId,
-        ts: planData.dmMessageTs,
-        text: `Revised plan: ${newPlan.summary}`,
-        blocks: planBlocks(newPlan, planId),
-      });
-    } catch (error) {
-      logger.error("Failed to refine plan:", error);
       try {
         await client.chat.update({
           channel: planData.dmChannelId,
           ts: planData.dmMessageTs,
-          text: "Failed to refine plan. Please try again.",
+          text: ":hourglass_flowing_sand: Re-generating plan...",
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: ":hourglass_flowing_sand: Re-generating plan with your feedback...",
+              },
+            },
+          ],
         });
-      } catch (updateError) {
-        logger.error("Failed to update DM with refine error:", updateError);
+      } catch (error) {
+        logger.error("Failed to update DM to loading state:", error);
       }
-    } finally {
-      markInactive(planData.userId);
-    }
+
+      markActive(planData.userId);
+      try {
+        const planResult = await generatePlan(
+          getOpenAIClient(),
+          client,
+          planData.channelId,
+          planData.taskDescription,
+          refinement,
+          planData.threadTs,
+          planData.transcriptContext,
+        );
+        const { plan: newPlan, planMessages: newPlanMessages } = planResult;
+
+        planData.plan = newPlan;
+        planData.planMessages = newPlanMessages;
+        storePlan(planData);
+
+        await client.chat.update({
+          channel: planData.dmChannelId,
+          ts: planData.dmMessageTs,
+          text: `Revised plan: ${newPlan.summary}`,
+          blocks: planBlocks(newPlan, planId),
+        });
+      } catch (error) {
+        logger.error("Failed to refine plan:", error);
+        try {
+          await client.chat.update({
+            channel: planData.dmChannelId,
+            ts: planData.dmMessageTs,
+            text: "Failed to refine plan. Please try again.",
+          });
+        } catch (updateError) {
+          logger.error("Failed to update DM with refine error:", updateError);
+        }
+      } finally {
+        markInactive(planData.userId);
+      }
+    })().catch((err) => logger.error("Unhandled error in plan refinement background:", err));
   });
 }
