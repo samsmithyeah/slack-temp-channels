@@ -340,7 +340,7 @@ export function registerAgentTaskHandlers(app: App): void {
       } finally {
         markInactive(userId);
       }
-    })();
+    })().catch((err) => logger.error("Unhandled error in agent task background:", err));
   });
 
   // 4. Accept plan
@@ -386,9 +386,18 @@ export function registerAgentTaskHandlers(app: App): void {
         logger.error("Failed to update DM to executing state:", error);
       }
 
-      if (planData.mentionChannelId && planData.mentionMessageTs) {
-        await removeReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "eyes");
-        await addReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "gear");
+      try {
+        if (planData.mentionChannelId && planData.mentionMessageTs) {
+          await removeReaction(
+            client,
+            planData.mentionChannelId,
+            planData.mentionMessageTs,
+            "eyes",
+          );
+          await addReaction(client, planData.mentionChannelId, planData.mentionMessageTs, "gear");
+        }
+      } catch (error) {
+        logger.error("Failed to update reactions before execution:", error);
       }
 
       markActive(planData.userId);
@@ -449,7 +458,7 @@ export function registerAgentTaskHandlers(app: App): void {
       }
 
       deletePlan(planId);
-    })();
+    })().catch((err) => logger.error("Unhandled error in plan execution background:", err));
   });
 
   // 5. Decline plan
@@ -680,6 +689,6 @@ export function registerAgentTaskHandlers(app: App): void {
       } finally {
         markInactive(planData.userId);
       }
-    })();
+    })().catch((err) => logger.error("Unhandled error in plan refinement background:", err));
   });
 }

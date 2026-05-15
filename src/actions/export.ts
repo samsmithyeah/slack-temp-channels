@@ -128,7 +128,7 @@ export function registerExportAction(app: App): void {
           logger.error("Failed to send export error DM:", dmError);
         }
       }
-    })();
+    })().catch((err) => logger.error("Unhandled error in export background task:", err));
   });
 
   app.view("export_with_files_submit", async ({ ack, view, body, client, logger }) => {
@@ -239,6 +239,6 @@ export function registerExportAction(app: App): void {
           logger.error("Failed to send export error DM:", dmError);
         }
       }
-    })();
+    })().catch((err) => logger.error("Unhandled error in file export background task:", err));
   });
 }
