@@ -3,10 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerExportAction } from "../../src/actions/export";
 import { createMockApp, createMockClient, createMockLogger } from "../helpers/mock-app";
 
-function flushPromises() {
-  return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
 function setupExportClient(client: ReturnType<typeof createMockClient>, userId: string) {
   // Default: user is a member of the channel (single page, no cursor)
   client.conversations.members.mockResolvedValue({
@@ -120,7 +116,6 @@ describe("registerExportAction", () => {
         client,
         logger: createMockLogger(),
       });
-      await flushPromises();
 
       expect(client.conversations.open).toHaveBeenCalledWith({ users: "U_REQUESTER" });
     });
@@ -147,7 +142,6 @@ describe("registerExportAction", () => {
         client,
         logger,
       });
-      await flushPromises();
 
       expect(logger.error).toHaveBeenCalledWith(
         "Failed to open DM for export: channel ID is missing",
@@ -196,7 +190,6 @@ describe("registerExportAction", () => {
         client,
         logger: createMockLogger(),
       });
-      await flushPromises();
 
       expect(client.conversations.members).toHaveBeenCalledTimes(2);
       expect(client.conversations.members).toHaveBeenCalledWith({
@@ -237,7 +230,6 @@ describe("registerExportAction", () => {
         client,
         logger: createMockLogger(),
       });
-      await flushPromises();
 
       expect(client.conversations.members).toHaveBeenCalledWith({
         channel: "C_CHAN",
@@ -270,7 +262,6 @@ describe("registerExportAction", () => {
         client,
         logger: createMockLogger(),
       });
-      await flushPromises();
 
       expect(client.filesUploadV2).not.toHaveBeenCalled();
       expect(client.conversations.history).not.toHaveBeenCalled();
@@ -313,7 +304,6 @@ describe("registerExportAction", () => {
         client,
         logger: createMockLogger(),
       });
-      await flushPromises();
 
       expect(ack).toHaveBeenCalled();
       expect(client.filesUploadV2).toHaveBeenCalledWith(
@@ -356,7 +346,6 @@ describe("registerExportAction", () => {
         client,
         logger: createMockLogger(),
       });
-      await flushPromises();
 
       expect(client.filesUploadV2).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -392,7 +381,6 @@ describe("registerExportAction", () => {
         client,
         logger: createMockLogger(),
       });
-      await flushPromises();
 
       expect(client.filesUploadV2).not.toHaveBeenCalled();
       expect(client.chat.postMessage).toHaveBeenCalledWith(
@@ -426,7 +414,6 @@ describe("registerExportAction", () => {
         client,
         logger,
       });
-      await flushPromises();
 
       expect(logger.error).toHaveBeenCalledWith(
         "Failed to export conversation:",
@@ -533,15 +520,13 @@ describe("registerExportAction", () => {
         logger: createMockLogger(),
       });
       expect(ack).toHaveBeenCalled();
-      await vi.waitFor(() => {
-        expect(client.filesUploadV2).toHaveBeenCalledWith(
-          expect.objectContaining({
-            channel_id: "D_DM",
-            filename: "test-channel.zip",
-            file: expect.any(Buffer),
-          }),
-        );
-      });
+      expect(client.filesUploadV2).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel_id: "D_DM",
+          filename: "test-channel.zip",
+          file: expect.any(Buffer),
+        }),
+      );
     });
 
     it("sends a 'preparing export' message before downloading", async () => {
@@ -576,7 +561,6 @@ describe("registerExportAction", () => {
         client,
         logger: createMockLogger(),
       });
-      await flushPromises();
 
       expect(client.chat.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -612,7 +596,6 @@ describe("registerExportAction", () => {
         client,
         logger: createMockLogger(),
       });
-      await flushPromises();
 
       expect(client.filesUploadV2).not.toHaveBeenCalled();
       expect(client.chat.postMessage).toHaveBeenCalledWith(
@@ -647,7 +630,6 @@ describe("registerExportAction", () => {
         client,
         logger,
       });
-      await flushPromises();
 
       expect(logger.error).toHaveBeenCalledWith(
         "Failed to export conversation with files:",

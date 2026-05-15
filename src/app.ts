@@ -14,7 +14,7 @@ if (!signingSecret || !botToken) {
   throw new Error("SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN environment variables are required");
 }
 
-const receiver = new ExpressReceiver({ signingSecret, processBeforeResponse: true });
+const receiver = new ExpressReceiver({ signingSecret });
 
 receiver.router.get("/health", (_req, res) => {
   res.status(200).send("ok");
