@@ -99,6 +99,11 @@ export function registerExportAction(app: App): void {
           return;
         }
 
+        await client.chat.postMessage({
+          channel: dmChannelId,
+          text: `Preparing export of #${channelName}...`,
+        });
+
         const userNames = await resolveUserNames(client, extractUserIds(messages));
 
         let content: string;
