@@ -54,6 +54,7 @@ export async function buildExportZip(
 
     passthrough.on("data", (chunk: Buffer) => chunks.push(chunk));
     passthrough.on("end", () => resolve(Buffer.concat(chunks)));
+    archive.on("error", reject);
     passthrough.on("error", reject);
 
     archive.pipe(passthrough);

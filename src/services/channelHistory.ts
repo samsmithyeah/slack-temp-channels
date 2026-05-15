@@ -1,5 +1,5 @@
 import type { WebClient } from "@slack/web-api";
-import type { SlackFile } from "./fileDownloader";
+import { archivePath, type SlackFile } from "./fileDownloader";
 
 const DEFAULT_MAX_PAGES = 3;
 export const EXPORT_MAX_PAGES = 100;
@@ -125,7 +125,7 @@ function formatFileRefs(files?: SlackFile[]): string {
 
 function formatFileRefsWithPaths(files?: SlackFile[]): string {
   if (!files?.length) return "";
-  return files.map((f) => ` [file: files/${f.id}_${f.name}]`).join("");
+  return files.map((f) => ` [file: ${archivePath(f)}]`).join("");
 }
 
 function formatMessageLine(
@@ -152,7 +152,7 @@ function toMessageJson(msg: RawMessage, userNames: Map<string, string>, includeF
           files: msg.files.map((f) => ({
             id: f.id,
             name: f.name,
-            ...(includeFilePaths ? { path: `files/${f.id}_${f.name}` } : {}),
+            ...(includeFilePaths ? { path: archivePath(f) } : {}),
           })),
         }
       : {}),
